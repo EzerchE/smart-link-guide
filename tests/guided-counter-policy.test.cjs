@@ -19,5 +19,7 @@ assert.match(content, /data-smart-link-guide-local-counter/);
 assert.match(content, /gateActionScore\s*>=\s*96/);
 assert.match(content, /tokenLikePath\s*&&\s*markerCount\s*>=\s*2/);
 assert.match(content, /forms\s*&&\s*markerCount/);
+assert.match(content, /activeGate\s*&&\s*!currentPage\.hardVerification/);
+assert.match(content, /data-smart-link-guide-captcha-error/);
 
 process.stdout.write("guided counter policy tests passed\n");

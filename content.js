@@ -182,6 +182,7 @@
     const gateError = Engine.detectsTransitionError(gateErrorText, document.contentType);
     const hasAntiAdblock = findAntiAdblockMessages().length > 0;
     const hasBlockedResource = document.documentElement.getAttribute("data-smart-link-guide-resource-blocked") === "script";
+    const captchaError = document.documentElement.getAttribute("data-smart-link-guide-captcha-error") || "";
     const markerPatterns = [
       /\bcontinue\b/, /get\s*link/, /skip\s*(?:ad|advert)/, /please\s*wait/,
       /click\s+(?:(?:on\s+)?(?:the\s+)?(?:below\s+)?)?(?:image|picture|photo|box|button)(?:\s*(?:(?:&|and)\s*)?wait|\s+to\s+start\s+(?:the\s+)?counter)/,
@@ -306,6 +307,7 @@
       serverTimingRequired,
       hasAntiAdblock,
       hasBlockedResource,
+      captchaError,
       gateError,
       gateErrorMessage: gateError ? gateErrorText.slice(0, 300) : "",
       candidates: candidates.slice(0, 8)
@@ -838,7 +840,9 @@
     }
     if (currentPage.hardVerification) {
       clearActionGuide();
+      document.documentElement.removeAttribute("data-smart-link-guide-popup-guard");
       document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
+      document.documentElement.removeAttribute("data-smart-link-guide-local-counter");
       return;
     }
     const counterStarter = eligibleActions().find((action) => action.reason === "Sayaç başlatma adımı");
@@ -1026,13 +1030,14 @@
     const activeGate = currentPage.hasLocalCountdown || currentPage.gateScore >= 35 || (journeyActive && (
       currentPage.gateScore >= 15 || currentPage.hasGateAction || currentPage.hasAntiAdblock
     ));
-    if (settings.blockPopupsOnGatePages && activeGate) {
+    if (settings.blockPopupsOnGatePages && activeGate && !currentPage.hardVerification) {
       document.documentElement.setAttribute("data-smart-link-guide-popup-guard", "active");
     } else {
       document.documentElement.removeAttribute("data-smart-link-guide-popup-guard");
     }
     if (settings.aggressiveFastPass && activeGate) {
       if (currentPage.hardVerification) {
+        document.documentElement.removeAttribute("data-smart-link-guide-popup-guard");
         document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
       } else {
         if (!naturalTimingMode) document.documentElement.setAttribute("data-smart-link-guide-aggressive", "active");
@@ -1071,9 +1076,11 @@
     }
     else if (currentPage.hardVerification && currentPage.gateScore >= 35) {
       showCard({
-        title: "İnsan doğrulaması gerekiyor",
-        text: "Gerçek CAPTCHA/parola adımını tamamlayın; kaybolduğu anda FastPass kalan adımları otomatik çalıştıracak.",
-        tone: "info"
+        title: currentPage.captchaError ? "İnsan doğrulaması zaman aşımına uğradı" : "İnsan doğrulaması gerekiyor",
+        text: currentPage.captchaError
+          ? "Eklenti doğrulama sırasında tamamen durduruldu ve CAPTCHA bir kez sıfırlandı. Kutuyu yeniden deneyin; yine takılırsa doğrulama servisi ağ filtresinde engelleniyor olabilir."
+          : "Gerçek CAPTCHA/parola adımını tamamlayın; doğrulama bitince kalan adımlar otomatik devam eder.",
+        tone: currentPage.captchaError ? "danger" : "info"
       });
     } else if (finalTargets.length) {
       if (settings.aggressiveFastPass) {

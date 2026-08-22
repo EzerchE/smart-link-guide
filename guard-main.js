@@ -20,6 +20,22 @@
   ];
   let accelerator = null;
   let acceleratorStopsAt = 0;
+  let captchaResetAttempts = 0;
+
+  function markCaptchaFailure(reason) {
+    const message = String(reason?.message || reason || "");
+    if (!/(?:recaptcha|captcha).*(?:timeout|network|failed)|(?:timeout|network|failed).*(?:recaptcha|captcha)/i.test(message)) return false;
+    const root = document.documentElement;
+    root?.setAttribute("data-smart-link-guide-captcha-error", /timeout/i.test(message) ? "timeout" : "network");
+    root?.removeAttribute("data-smart-link-guide-popup-guard");
+    root?.removeAttribute("data-smart-link-guide-aggressive");
+    root?.removeAttribute("data-smart-link-guide-local-counter");
+    if (captchaResetAttempts < 1) {
+      captchaResetAttempts += 1;
+      try { globalThis.grecaptcha?.reset?.(); } catch {}
+    }
+    return true;
+  }
 
   function declaredAdDimension(element, axis, fallback) {
     const declared = `${element.getAttribute?.("data-sizes-desktop") || ""},${element.getAttribute?.("data-sizes-mobile") || ""}`
@@ -58,10 +74,21 @@
     });
   }, true);
 
+  window.addEventListener?.("unhandledrejection", (event) => {
+    markCaptchaFailure(event.reason);
+  }, true);
+
   window.addEventListener?.("error", (event) => {
+    if (markCaptchaFailure(event.error || event.message)) return;
     const target = event.target;
     if (target?.tagName !== "SCRIPT" || !/^https?:/i.test(target.src || "")) return;
-    document.documentElement?.setAttribute("data-smart-link-guide-resource-blocked", "script");
+    const captchaResource = /(?:google\.com|gstatic\.com|recaptcha\.net)\/.*recaptcha/i.test(target.src);
+    if (captchaResource) {
+      document.documentElement?.setAttribute("data-smart-link-guide-resource-blocked", "captcha");
+      markCaptchaFailure("reCAPTCHA network failed");
+    } else if (gateSurfaceActive()) {
+      document.documentElement?.setAttribute("data-smart-link-guide-resource-blocked", "script");
+    }
   }, true);
 
   function popupGuardActive() {
@@ -82,7 +109,6 @@
     const activeAttribute = [
       "data-smart-link-guide-popup-guard",
       "data-smart-link-guide-aggressive",
-      "data-smart-link-guide-natural-timing",
       "data-smart-link-guide-local-counter"
     ].some((name) => root?.getAttribute(name) === "active");
     if (activeAttribute) return true;

@@ -23,5 +23,8 @@ assert.match(guard, /"offsetHeight",\s*"height",\s*90/);
 assert.match(guard, /"clientWidth",\s*"width",\s*300/);
 assert.match(guard, /gateSurfaceActive\(\)\s*&&\s*measured\s*<\s*25/);
 assert.match(guard, /transitionCallback\(callback\)\s*\|\|\s*gateSurfaceActive\(\)/);
+assert.match(guard, /function markCaptchaFailure/);
+assert.match(guard, /"unhandledrejection"/);
+assert.match(guard, /grecaptcha\?\.reset/);
 
 process.stdout.write("anti-adblock policy tests passed\n");
