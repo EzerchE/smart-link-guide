@@ -49,4 +49,13 @@ window.setInterval(function updateTimer() {}, 1000);
 assert.equal(timeoutDelays.at(-1), 25);
 assert.equal(intervalDelays.at(-1), 50);
 
+window.count = 5;
+attributes.set("data-smart-link-guide-natural-timing", "active");
+observerCallback();
+assert.equal(window.count, 5);
+window.setTimeout(function countdownRedirect() {}, 3000);
+window.setInterval(function updateTimer() {}, 1000);
+assert.equal(timeoutDelays.at(-1), 3000);
+assert.equal(intervalDelays.at(-1), 1000);
+
 process.stdout.write("guard tests passed\n");

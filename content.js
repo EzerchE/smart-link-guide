@@ -12,6 +12,7 @@
   let settings = null;
   let currentPage = null;
   let journeyActive = false;
+  let naturalTimingMode = false;
   let lastCardSignature = null;
   let fastPassObserver = null;
   let fastPassThrottle = null;
@@ -35,6 +36,7 @@
     scheduledTargetSignature = null;
     document.documentElement.removeAttribute("data-smart-link-guide-popup-guard");
     document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
+    document.documentElement.removeAttribute("data-smart-link-guide-natural-timing");
     removeCard();
   }
 
@@ -164,6 +166,8 @@
     for (const candidate of urlAnalysis.candidates) addCandidate(candidate.url, candidate, candidates, seen);
 
     const bodyText = sampleVisibleText();
+    const gateErrorText = String(document.body?.innerText || document.body?.textContent || "").trim().slice(0, 2000);
+    const gateError = Engine.detectsTransitionError(gateErrorText, document.contentType);
     const hasAntiAdblock = findAntiAdblockMessages().length > 0;
     const markerPatterns = [
       /\bcontinue\b/, /get\s*link/, /skip\s*(?:ad|advert)/, /please\s*wait/,
@@ -266,6 +270,8 @@
       hardVerification,
       hasGateAction,
       hasAntiAdblock,
+      gateError,
+      gateErrorMessage: gateError ? gateErrorText.slice(0, 300) : "",
       candidates: candidates.slice(0, 8)
     };
   }
@@ -653,13 +659,18 @@
     const signature = `${element.tagName}:${elementLabel(element).toLowerCase()}:${href || form?.action || ""}`;
     const attempts = actionAttempts.get(signature) || 0;
     if (attempts >= 3) return false;
+    const naturallyDisabled = element.matches(":disabled") || element.getAttribute("aria-disabled") === "true" ||
+      element.classList.contains("disabled") || element.classList.contains("btn-disabled") || element.classList.contains("is-disabled");
+    if (naturalTimingMode && naturallyDisabled) return false;
     actionAttempts.set(signature, attempts + 1);
 
-    element.removeAttribute("disabled");
-    element.removeAttribute("aria-disabled");
-    element.classList.remove("disabled", "btn-disabled", "is-disabled");
-    if ("disabled" in element) {
-      try { element.disabled = false; } catch {}
+    if (!naturalTimingMode) {
+      element.removeAttribute("disabled");
+      element.removeAttribute("aria-disabled");
+      element.classList.remove("disabled", "btn-disabled", "is-disabled");
+      if ("disabled" in element) {
+        try { element.disabled = false; } catch {}
+      }
     }
 
     if (href && Engine.shouldFollowActionHref(href, location.href)) {
@@ -686,6 +697,7 @@
   }
 
   function tryFallbackForm() {
+    if (naturalTimingMode) return false;
     const forms = [...document.forms].filter((form) => !formIsSensitive(form));
     for (const form of forms) {
       const actionUrl = Engine.normalizeUrl(form.action || location.href, location.href);
@@ -724,7 +736,8 @@
       document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
       return;
     }
-    document.documentElement.setAttribute("data-smart-link-guide-aggressive", "active");
+    if (naturalTimingMode) document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
+    else document.documentElement.setAttribute("data-smart-link-guide-aggressive", "active");
     if (!settings.autoSubmitSteps) return;
 
     const action = eligibleActions()[0];
@@ -825,7 +838,39 @@
     if (!response?.ok) return;
     settings = response.settings;
     journeyActive = Boolean(response.journeyActive);
+    naturalTimingMode = Boolean(response.naturalTiming);
+    if (naturalTimingMode) {
+      document.documentElement.setAttribute("data-smart-link-guide-natural-timing", "active");
+      document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
+    } else {
+      document.documentElement.removeAttribute("data-smart-link-guide-natural-timing");
+    }
     if (!settings.enabled) return;
+    if (currentPage.gateError && journeyActive) {
+      clearTimeout(scheduledTargetTimer);
+      scheduledTargetTimer = null;
+      scheduledTargetSignature = null;
+      fastPassObserver?.disconnect();
+      fastPassObserver = null;
+      removeCard();
+      if (response.recoveryUrl) {
+        showCard({
+          title: "Geçiş isteği reddedildi",
+          text: "Zincir doğal sunucu zamanlamasıyla bir kez yeniden başlatılıyor.",
+          primaryLabel: "Şimdi yeniden dene",
+          onPrimary: () => location.replace(response.recoveryUrl),
+          tone: "danger"
+        });
+        scheduleTask(() => location.replace(response.recoveryUrl), 1500);
+      } else {
+        showCard({
+          title: "Geçiş tamamlanamadı",
+          text: "Sunucu isteği reddetti. Geçişi ilk bağlantıdan yeniden başlatın.",
+          tone: "danger"
+        });
+      }
+      return;
+    }
     if (dismissAntiAdblockOverlay()) currentPage = scanPage();
     const finalCandidates = currentPage.candidates.filter((candidate) => candidate.final !== false && candidate.risk?.safe);
     const visibleResults = finalCandidates.filter((candidate) => candidate.source === "result-anchor");
@@ -840,7 +885,7 @@
       if (currentPage.hardVerification) {
         document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
       } else {
-        document.documentElement.setAttribute("data-smart-link-guide-aggressive", "active");
+        if (!naturalTimingMode) document.documentElement.setAttribute("data-smart-link-guide-aggressive", "active");
       }
       startFastPassAutomation();
     } else {

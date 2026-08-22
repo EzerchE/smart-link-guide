@@ -17,7 +17,8 @@
   }
 
   function aggressiveActive() {
-    return document.documentElement?.getAttribute("data-smart-link-guide-aggressive") === "active";
+    return document.documentElement?.getAttribute("data-smart-link-guide-aggressive") === "active" &&
+      document.documentElement?.getAttribute("data-smart-link-guide-natural-timing") !== "active";
   }
 
   function transitionCallback(callback) {
@@ -88,7 +89,7 @@
     if (!document.documentElement) return;
     attributeObserver.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-smart-link-guide-aggressive"]
+      attributeFilter: ["data-smart-link-guide-aggressive", "data-smart-link-guide-natural-timing"]
     });
     if (aggressiveActive()) startAccelerator();
   }

@@ -69,14 +69,27 @@ function cleanupJourneys() {
 function startJourney(tabId, targetUrl, sourceUrl = null) {
   const normalized = Engine.normalizeUrl(targetUrl);
   if (!Number.isInteger(tabId) || !normalized) return null;
+  const normalizedSource = Engine.normalizeUrl(sourceUrl);
+  const existing = journeys.get(tabId);
+  const currentKey = Engine.canonicalKey(existing?.currentUrl);
+  const continuesExisting = Boolean(existing && currentKey && (
+    Engine.canonicalKey(normalized) === currentKey ||
+    Engine.canonicalKey(normalizedSource) === currentKey
+  ));
+  if (continuesExisting) {
+    existing.naturalTiming = Boolean(existing.naturalTiming || Engine.requiresNaturalTiming(normalized));
+    return updateJourney(tabId, normalized);
+  }
   const now = Date.now();
   const journey = {
     tabId,
-    sourceUrl: Engine.normalizeUrl(sourceUrl) || null,
+    sourceUrl: normalizedSource || null,
     startUrl: normalized,
     startHost: new URL(normalized).hostname,
     currentUrl: normalized,
     chain: [normalized],
+    naturalTiming: Engine.requiresNaturalTiming(normalized),
+    recoveryAttempts: 0,
     startedAt: now,
     updatedAt: now
   };
@@ -204,6 +217,7 @@ function pageBlocksConfirmation(page) {
     page?.hardVerification ||
     page?.hasGateAction ||
     page?.hasAntiAdblock ||
+    page?.gateError ||
     Number(page?.gateScore || 0) >= 35
   );
 }
@@ -354,16 +368,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           hardVerification: Boolean(message.page?.hardVerification),
           hasGateAction: Boolean(message.page?.hasGateAction),
           hasAntiAdblock: Boolean(message.page?.hasAntiAdblock),
+          gateError: Boolean(message.page?.gateError),
+          gateErrorMessage: String(message.page?.gateErrorMessage || "").slice(0, 300),
           candidates: Array.isArray(message.page?.candidates) ? message.page.candidates.slice(0, 8) : [],
           updatedAt: Date.now()
         };
         tabStates.set(senderTabId, page);
         if (!journeys.has(senderTabId) && page.url && page.gateScore >= 45) startJourney(senderTabId, page.url);
+        const journey = journeys.get(senderTabId) || null;
+        let recoveryUrl = null;
+        if (page.gateError && journey) {
+          journey.naturalTiming = true;
+          if ((journey.recoveryAttempts || 0) < 1) {
+            journey.recoveryAttempts = (journey.recoveryAttempts || 0) + 1;
+            recoveryUrl = journey.startUrl;
+          }
+        }
         return {
           ok: true,
           decision: await getDecision(page.url, page.hardVerification),
           pendingConfirmation: confirmationFor(senderTabId, page.url, page),
-          journeyActive: journeys.has(senderTabId),
+          journeyActive: Boolean(journey),
+          naturalTiming: Boolean(journey?.naturalTiming),
+          recoveryUrl,
           settings: (await getStore()).settings
         };
       }

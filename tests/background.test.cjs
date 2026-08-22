@@ -66,6 +66,38 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
   assert.equal(storage.settings.dismissAntiAdblockOverlays, true);
   await send({ type: "UPDATE_SETTINGS", patch: { enabled: true } });
 
+  const signedGateway = `https://jump.example/goto/${"A".repeat(40)}/token`;
+  const timedIntermediate = "https://intermediate.example/wait";
+  const rejectedStep = "https://intermediate.example/links/go";
+  assert.equal((await send({ type: "START_JOURNEY", targetUrl: signedGateway })).ok, true);
+  listeners.committed({ tabId: 8, frameId: 0, url: timedIntermediate });
+  assert.equal((await send({
+    type: "START_JOURNEY",
+    targetUrl: timedIntermediate,
+    sourceUrl: timedIntermediate
+  }, 8, timedIntermediate)).ok, true);
+  listeners.committed({ tabId: 8, frameId: 0, url: rejectedStep });
+  const rejected = await send({
+    type: "PAGE_STATE",
+    page: {
+      url: rejectedStep,
+      gateScore: 0,
+      gateError: true,
+      gateErrorMessage: "Bad Request.",
+      candidates: []
+    }
+  }, 8, rejectedStep);
+  assert.equal(rejected.pendingConfirmation, null);
+  assert.equal(rejected.naturalTiming, true);
+  assert.equal(rejected.recoveryUrl, signedGateway);
+  const repeatedRejection = await send({
+    type: "PAGE_STATE",
+    page: { url: rejectedStep, gateScore: 0, gateError: true, candidates: [] }
+  }, 8, rejectedStep);
+  assert.equal(repeatedRejection.recoveryUrl, null);
+  const rejectedConfirmation = await send({ type: "CONFIRM_JOURNEY", destinationUrl: rejectedStep }, 8, rejectedStep);
+  assert.equal(rejectedConfirmation.ok, false);
+
   const gateway = "https://tpi.li/AbCdEf123";
   const antiAdblockIntermediate = "https://intermediate.example/article";
   const continueIntermediate = "https://second-step.example/continue";

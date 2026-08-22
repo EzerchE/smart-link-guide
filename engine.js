@@ -231,6 +231,30 @@
     return mentionsBlocker && requestsDisable;
   }
 
+  function requiresNaturalTiming(urlValue) {
+    const normalized = normalizeUrl(urlValue);
+    if (!normalized) return false;
+    const url = new URL(normalized);
+    const opaqueSegment = url.pathname.split("/").some((segment) =>
+      segment.length >= 36 && /^[A-Za-z0-9+_=-]+$/.test(segment)
+    );
+    const signedParameter = [...url.searchParams.keys()].some((key) =>
+      /^(?:token|signature|sig|hash|nonce|timestamp|ts|expires?)$/i.test(key)
+    );
+    const transitionPath = /\/(?:go|goto|out|redirect|links?\/go)(?:\/|$)/i.test(url.pathname);
+    return signedParameter || (transitionPath && (opaqueSegment || normalized.length >= 180));
+  }
+
+  function detectsTransitionError(value, contentType = "") {
+    const text = String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+    if (!text || text.length > 3000) return false;
+    const structured = /json/i.test(String(contentType || "")) || /^[{[]/.test(text);
+    const explicitStatus = /["']?status["']?\s*:\s*["']?(?:error|failed|failure)/.test(text);
+    const failureMessage = /\bbad request\b|invalid\s+(?:request|token|signature|link)|expired\s+(?:token|signature|link)|request\s+failed|access\s+denied|forbidden/.test(text);
+    const terseFailure = text.length <= 500 && /^(?:(?:error|failure|failed)\s*[:—-]?\s*)?(?:bad request|invalid (?:request|token|signature|link)|expired (?:token|signature|link)|request failed|access denied|forbidden)\b/.test(text);
+    return explicitStatus || (structured && failureMessage) || terseFailure;
+  }
+
   root.LinkGuideEngine = Object.freeze({
     DESTINATION_PARAMS,
     normalizeUrl,
@@ -244,6 +268,8 @@
     isContainerPage,
     isPlausibleCaptchaAnswer,
     detectsAntiAdblockMessage,
+    requiresNaturalTiming,
+    detectsTransitionError,
     isPrivateHost
   });
 })(globalThis);
