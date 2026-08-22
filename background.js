@@ -107,6 +107,27 @@ function updateJourney(tabId, urlValue) {
   return journey;
 }
 
+function recoveryCheckpoint(journey, rejectedUrl) {
+  if (!journey || !Array.isArray(journey.chain)) return null;
+  const rejectedKey = Engine.canonicalKey(rejectedUrl);
+  const candidates = [];
+  const seen = new Set();
+  for (let index = journey.chain.length - 1; index >= 0; index -= 1) {
+    const candidate = Engine.normalizeUrl(journey.chain[index]);
+    const key = Engine.canonicalKey(candidate);
+    if (!candidate || !key || key === rejectedKey || seen.has(key)) continue;
+    seen.add(key);
+    candidates.push(candidate);
+  }
+  if (!candidates.length) return journey.startUrl || null;
+  try {
+    const rejectedOrigin = new URL(Engine.normalizeUrl(rejectedUrl)).origin;
+    return candidates.find((candidate) => new URL(candidate).origin === rejectedOrigin) || candidates[0];
+  } catch {
+    return candidates[0];
+  }
+}
+
 function findLearnedLink(store, urlValue) {
   const key = Engine.canonicalKey(urlValue);
   if (!key) return null;
@@ -381,7 +402,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           journey.naturalTiming = true;
           if ((journey.recoveryAttempts || 0) < 1) {
             journey.recoveryAttempts = (journey.recoveryAttempts || 0) + 1;
-            recoveryUrl = journey.startUrl;
+            recoveryUrl = recoveryCheckpoint(journey, page.url);
           }
         }
         return {

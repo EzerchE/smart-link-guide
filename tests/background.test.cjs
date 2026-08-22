@@ -89,7 +89,7 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
   }, 8, rejectedStep);
   assert.equal(rejected.pendingConfirmation, null);
   assert.equal(rejected.naturalTiming, true);
-  assert.equal(rejected.recoveryUrl, signedGateway);
+  assert.equal(rejected.recoveryUrl, timedIntermediate);
   const repeatedRejection = await send({
     type: "PAGE_STATE",
     page: { url: rejectedStep, gateScore: 0, gateError: true, candidates: [] }

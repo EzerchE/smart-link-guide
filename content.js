@@ -114,7 +114,7 @@
     const tailStart = Math.max(firstLimit, allElements.length - 750);
     for (let index = tailStart; index < allElements.length; index += 1) sampledElements.push(allElements[index]);
 
-    return sampledElements.filter((element) => {
+    const matches = sampledElements.filter((element) => {
       const text = String(element.textContent || "").trim();
       if (text.length < 20 || text.length > 1200 || !isVisible(element) || !Engine.detectsAntiAdblockMessage(text)) return false;
       for (let current = element; current && current !== document.body; current = current.parentElement) {
@@ -123,8 +123,9 @@
         if (current.matches(ANTI_ADBLOCK_OVERLAY_SELECTOR) || /fixed|sticky/.test(style.position)) return true;
         if (rect.width >= innerWidth * 0.45 && rect.height >= innerHeight * 0.18 && Number.parseInt(style.zIndex, 10) >= 10) return true;
       }
-      return false;
-    }).sort((left, right) => String(left.textContent || "").length - String(right.textContent || "").length).slice(0, 1);
+      return element.children.length <= 4;
+    }).sort((left, right) => String(left.textContent || "").length - String(right.textContent || "").length);
+    return [...new Set(matches)].slice(0, 4);
   }
 
   function send(message) {
@@ -609,14 +610,19 @@
     let removed = false;
     for (const match of matches.slice(0, 4)) {
       let shell = match;
+      let overlayFound = match.matches(ANTI_ADBLOCK_OVERLAY_SELECTOR);
       for (let parent = match.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
         const style = getComputedStyle(parent);
         const rect = parent.getBoundingClientRect();
         const overlayLike = /fixed|sticky/.test(style.position) || parent.matches(ANTI_ADBLOCK_OVERLAY_SELECTOR) ||
           (rect.width >= innerWidth * 0.55 && rect.height >= innerHeight * 0.25 && Number.parseInt(style.zIndex, 10) >= 10);
-        if (overlayLike) shell = parent;
+        if (overlayLike) {
+          shell = parent;
+          overlayFound = true;
+        }
         if (style.position === "fixed" && rect.width >= innerWidth * 0.8 && rect.height >= innerHeight * 0.8) break;
       }
+      if (!overlayFound) continue;
       shell.style.setProperty("display", "none", "important");
       shell.setAttribute("aria-hidden", "true");
       removed = true;
@@ -723,7 +729,9 @@
   function attemptFastPass() {
     if (!contextIsUsable() || !settings?.enabled || !settings.aggressiveFastPass) return;
     currentPage = scanPage();
-    const activeGate = currentPage.gateScore >= 35 || (journeyActive && (currentPage.hasGateAction || currentPage.hasAntiAdblock));
+    const activeGate = currentPage.gateScore >= 35 || (journeyActive && (
+      currentPage.gateScore >= 15 || currentPage.hasGateAction || currentPage.hasAntiAdblock
+    ));
     if (!activeGate) return;
     if (dismissAntiAdblockOverlay()) currentPage = scanPage();
     const visibleResults = currentPage.candidates.filter((candidate) => candidate.source === "result-anchor" && candidate.risk?.safe);
@@ -875,7 +883,9 @@
     const finalCandidates = currentPage.candidates.filter((candidate) => candidate.final !== false && candidate.risk?.safe);
     const visibleResults = finalCandidates.filter((candidate) => candidate.source === "result-anchor");
     if (await completeVisibleResults(visibleResults)) return;
-    const activeGate = currentPage.gateScore >= 35 || (journeyActive && (currentPage.hasGateAction || currentPage.hasAntiAdblock));
+    const activeGate = currentPage.gateScore >= 35 || (journeyActive && (
+      currentPage.gateScore >= 15 || currentPage.hasGateAction || currentPage.hasAntiAdblock
+    ));
     if (settings.blockPopupsOnGatePages && activeGate) {
       document.documentElement.setAttribute("data-smart-link-guide-popup-guard", "active");
     } else {
@@ -901,6 +911,13 @@
           learnBundle: false
         });
       } else showDecision(response.decision);
+    }
+    else if (currentPage.hasAntiAdblock && !currentPage.hasGateAction && !currentPage.hardVerification) {
+      showCard({
+        title: "Reklam engeli geçişi durdurdu",
+        text: "Bu geçitte gerekli betik reklam engelleyici tarafından durduruluyor. Bu sekme için engellemeyi geçici kapatın; açılır pencere koruması etkin kalır.",
+        tone: "info"
+      });
     }
     else if (currentPage.hardVerification && currentPage.gateScore >= 35) {
       showCard({
