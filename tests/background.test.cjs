@@ -63,11 +63,46 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
   assert.equal(storage.settings.blockPopupsOnGatePages, true);
   assert.equal(storage.settings.aggressiveFastPass, true);
   assert.equal(storage.settings.autoSubmitSteps, true);
+  assert.equal(storage.settings.dismissAntiAdblockOverlays, true);
   await send({ type: "UPDATE_SETTINGS", patch: { enabled: true } });
 
   const gateway = "https://tpi.li/AbCdEf123";
+  const antiAdblockIntermediate = "https://intermediate.example/article";
+  const continueIntermediate = "https://second-step.example/continue";
   const destination = "https://files.example/download?id=1";
   assert.equal((await send({ type: "START_JOURNEY", targetUrl: gateway })).ok, true);
+  listeners.committed({ tabId: 8, frameId: 0, url: antiAdblockIntermediate });
+
+  const blockedByOverlay = await send({
+    type: "PAGE_STATE",
+    page: {
+      url: antiAdblockIntermediate,
+      gateScore: 8,
+      hasGateAction: false,
+      hasAntiAdblock: true,
+      hardVerification: false,
+      candidates: []
+    }
+  }, 8, antiAdblockIntermediate);
+  assert.equal(blockedByOverlay.pendingConfirmation, null);
+  assert.equal(blockedByOverlay.journeyActive, true);
+
+  listeners.committed({ tabId: 8, frameId: 0, url: continueIntermediate });
+  const blockedByContinue = await send({
+    type: "PAGE_STATE",
+    page: {
+      url: continueIntermediate,
+      gateScore: 18,
+      hasGateAction: true,
+      hasAntiAdblock: false,
+      hardVerification: false,
+      candidates: []
+    }
+  }, 8, continueIntermediate);
+  assert.equal(blockedByContinue.pendingConfirmation, null);
+  const prematureConfirmation = await send({ type: "CONFIRM_JOURNEY", destinationUrl: continueIntermediate }, 8, continueIntermediate);
+  assert.equal(prematureConfirmation.ok, false);
+
   listeners.committed({ tabId: 8, frameId: 0, url: destination });
 
   const arrived = await send({

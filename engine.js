@@ -223,6 +223,14 @@
     return true;
   }
 
+  function detectsAntiAdblockMessage(value) {
+    const text = String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+    if (!text || text.length > 1400) return false;
+    const mentionsBlocker = /\bads?\s*block(?:er|ing)?\b|\badblock(?:er)?\b|reklam\s*engelleyici/.test(text);
+    const requestsDisable = /detected|disable|turn\s*off|whitelist|allow\s+ads?|kapat|devre\s*dışı|izin\s*ver/.test(text);
+    return mentionsBlocker && requestsDisable;
+  }
+
   root.LinkGuideEngine = Object.freeze({
     DESTINATION_PARAMS,
     normalizeUrl,
@@ -235,6 +243,7 @@
     shouldFollowActionHref,
     isContainerPage,
     isPlausibleCaptchaAnswer,
+    detectsAntiAdblockMessage,
     isPrivateHost
   });
 })(globalThis);

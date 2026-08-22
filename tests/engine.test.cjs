@@ -44,6 +44,9 @@ assert.equal(Engine.isPlausibleCaptchaAnswer("a7B4"), true);
 assert.equal(Engine.isPlausibleCaptchaAnswer("1234", { minLength: 6 }), false);
 assert.equal(Engine.isPlausibleCaptchaAnswer("123456", { minLength: 6, maxLength: 6, pattern: "[0-9]+" }), true);
 assert.equal(Engine.isPlausibleCaptchaAnswer("12ab56", { minLength: 6, maxLength: 6, pattern: "[0-9]+" }), false);
+assert.equal(Engine.detectsAntiAdblockMessage("Ads Blocker Detected! Please disable your ad blocker."), true);
+assert.equal(Engine.detectsAntiAdblockMessage("Reklam engelleyiciyi kapatın ve devam edin."), true);
+assert.equal(Engine.detectsAntiAdblockMessage("A guide to privacy-friendly advertising"), false);
 assert.equal(
   Engine.canonicalKey("https://example.com/path?b=2&utm_source=x&a=1#part"),
   "https://example.com/path?a=1&b=2"

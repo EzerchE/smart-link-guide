@@ -17,7 +17,8 @@ const DEFAULT_STORE = Object.freeze({
     blockPopupsOnGatePages: true,
     aggressiveFastPass: true,
     autoSubmitSteps: true,
-    hideGateAds: true
+    hideGateAds: true,
+    dismissAntiAdblockOverlays: true
   },
   learnedLinks: [],
   learnedBundles: [],
@@ -198,11 +199,21 @@ async function learnBundle(sourceUrl, targetValues) {
   return entry;
 }
 
-function confirmationFor(tabId, currentUrl) {
+function pageBlocksConfirmation(page) {
+  return Boolean(
+    page?.hardVerification ||
+    page?.hasGateAction ||
+    page?.hasAntiAdblock ||
+    Number(page?.gateScore || 0) >= 35
+  );
+}
+
+function confirmationFor(tabId, currentUrl, page = null) {
   const journey = updateJourney(tabId, currentUrl);
   if (!journey) return null;
   const current = new URL(journey.currentUrl);
   if (current.hostname === journey.startHost || Engine.canonicalKey(journey.currentUrl) === Engine.canonicalKey(journey.startUrl)) return null;
+  if (pageBlocksConfirmation(page)) return null;
   return {
     from: journey.startUrl,
     to: journey.currentUrl,
@@ -215,6 +226,10 @@ async function confirmJourney(tabId, destinationUrl) {
   const destination = Engine.normalizeUrl(destinationUrl);
   if (!journey || !destination || Engine.canonicalKey(destination) !== Engine.canonicalKey(journey.currentUrl)) {
     throw new Error("Doğrulanabilecek etkin bir geçiş bulunamadı.");
+  }
+  const page = tabStates.get(tabId) || null;
+  if (page && Engine.canonicalKey(page.url) === Engine.canonicalKey(destination) && pageBlocksConfirmation(page)) {
+    throw new Error("Geçiş adımları tamamlanmadan hedef öğrenilemez.");
   }
 
   const risk = Engine.assessRisk(destination);
@@ -293,7 +308,7 @@ async function getPopupState(tabId, currentUrl) {
     currentUrl: Engine.normalizeUrl(currentUrl),
     currentPage: state,
     decision: currentUrl ? await getDecision(currentUrl, Boolean(state?.hardVerification)) : null,
-    pendingConfirmation: journey && currentUrl ? confirmationFor(tabId, currentUrl) : null
+    pendingConfirmation: journey && currentUrl ? confirmationFor(tabId, currentUrl, state) : null
   };
 }
 
@@ -337,6 +352,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           gateScore: Number(message.page?.gateScore) || 0,
           hasCaptcha: Boolean(message.page?.hasCaptcha),
           hardVerification: Boolean(message.page?.hardVerification),
+          hasGateAction: Boolean(message.page?.hasGateAction),
+          hasAntiAdblock: Boolean(message.page?.hasAntiAdblock),
           candidates: Array.isArray(message.page?.candidates) ? message.page.candidates.slice(0, 8) : [],
           updatedAt: Date.now()
         };
@@ -345,7 +362,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return {
           ok: true,
           decision: await getDecision(page.url, page.hardVerification),
-          pendingConfirmation: confirmationFor(senderTabId, page.url),
+          pendingConfirmation: confirmationFor(senderTabId, page.url, page),
+          journeyActive: journeys.has(senderTabId),
           settings: (await getStore()).settings
         };
       }

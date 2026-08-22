@@ -14,6 +14,7 @@ const elements = {
   aggressiveFastPass: document.querySelector("#aggressiveFastPass"),
   autoSubmitSteps: document.querySelector("#autoSubmitSteps"),
   hideGateAds: document.querySelector("#hideGateAds"),
+  dismissAntiAdblock: document.querySelector("#dismissAntiAdblock"),
   autoOpenLearned: document.querySelector("#autoOpenLearned"),
   autoOpenPatterns: document.querySelector("#autoOpenPatterns"),
   blockPopups: document.querySelector("#blockPopups"),
@@ -90,6 +91,7 @@ function render(nextState) {
   elements.aggressiveFastPass.checked = settings.aggressiveFastPass;
   elements.autoSubmitSteps.checked = settings.autoSubmitSteps;
   elements.hideGateAds.checked = settings.hideGateAds;
+  elements.dismissAntiAdblock.checked = settings.dismissAntiAdblockOverlays;
   elements.autoOpenLearned.checked = settings.autoOpenLearned;
   elements.autoOpenPatterns.checked = settings.autoOpenLearnedPatterns;
   elements.blockPopups.checked = settings.blockPopupsOnGatePages;
@@ -159,6 +161,7 @@ elements.showAssistant.addEventListener("change", () => updateSettings({ showAss
 elements.aggressiveFastPass.addEventListener("change", () => updateSettings({ aggressiveFastPass: elements.aggressiveFastPass.checked }));
 elements.autoSubmitSteps.addEventListener("change", () => updateSettings({ autoSubmitSteps: elements.autoSubmitSteps.checked }));
 elements.hideGateAds.addEventListener("change", () => updateSettings({ hideGateAds: elements.hideGateAds.checked }));
+elements.dismissAntiAdblock.addEventListener("change", () => updateSettings({ dismissAntiAdblockOverlays: elements.dismissAntiAdblock.checked }));
 elements.autoOpenLearned.addEventListener("change", () => updateSettings({ autoOpenLearned: elements.autoOpenLearned.checked }));
 elements.autoOpenPatterns.addEventListener("change", () => updateSettings({ autoOpenLearnedPatterns: elements.autoOpenPatterns.checked }));
 elements.blockPopups.addEventListener("change", () => updateSettings({ blockPopupsOnGatePages: elements.blockPopups.checked }));

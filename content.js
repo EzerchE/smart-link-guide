@@ -5,8 +5,13 @@
   const Engine = globalThis.LinkGuideEngine;
   const CARD_ID = "smart-link-guide-card";
   const MAX_ANCHORS_TO_SCAN = 400;
+  const ANTI_ADBLOCK_OVERLAY_SELECTOR = [
+    '[role="dialog"]', '[aria-modal="true"]', '[class*="modal" i]', '[id*="modal" i]',
+    '[class*="popup" i]', '[id*="popup" i]', '[class*="overlay" i]', '[id*="overlay" i]'
+  ].join(",");
   let settings = null;
   let currentPage = null;
+  let journeyActive = false;
   let lastCardSignature = null;
   let fastPassObserver = null;
   let fastPassThrottle = null;
@@ -31,6 +36,32 @@
       length += part.length + 1;
     }
     return chunks.join(" ").toLowerCase();
+  }
+
+  function findAntiAdblockMessages() {
+    const explicitOverlays = [...document.querySelectorAll(ANTI_ADBLOCK_OVERLAY_SELECTOR)].filter((element) =>
+      isVisible(element) && Engine.detectsAntiAdblockMessage(element.textContent)
+    );
+    if (explicitOverlays.length) return explicitOverlays.slice(0, 4);
+
+    const allElements = document.querySelectorAll("body *");
+    const sampledElements = [];
+    const firstLimit = Math.min(250, allElements.length);
+    for (let index = 0; index < firstLimit; index += 1) sampledElements.push(allElements[index]);
+    const tailStart = Math.max(firstLimit, allElements.length - 750);
+    for (let index = tailStart; index < allElements.length; index += 1) sampledElements.push(allElements[index]);
+
+    return sampledElements.filter((element) => {
+      const text = String(element.textContent || "").trim();
+      if (text.length < 20 || text.length > 1200 || !isVisible(element) || !Engine.detectsAntiAdblockMessage(text)) return false;
+      for (let current = element; current && current !== document.body; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        const rect = current.getBoundingClientRect();
+        if (current.matches(ANTI_ADBLOCK_OVERLAY_SELECTOR) || /fixed|sticky/.test(style.position)) return true;
+        if (rect.width >= innerWidth * 0.45 && rect.height >= innerHeight * 0.18 && Number.parseInt(style.zIndex, 10) >= 10) return true;
+      }
+      return false;
+    }).sort((left, right) => String(left.textContent || "").length - String(right.textContent || "").length).slice(0, 1);
   }
 
   function send(message) {
@@ -63,6 +94,7 @@
     for (const candidate of urlAnalysis.candidates) addCandidate(candidate.url, candidate, candidates, seen);
 
     const bodyText = sampleVisibleText();
+    const hasAntiAdblock = findAntiAdblockMessages().length > 0;
     const markerPatterns = [
       /\bcontinue\b/, /get\s*link/, /skip\s*(?:ad|advert)/, /please\s*wait/,
       /unlock\s*link/, /proceed\s*to/, /click\s*to\s*proceed/, /bağlantıya\s*git/, /devam\s*et/,
@@ -99,6 +131,11 @@
     const likelyLogin = hasPasswordField &&
       /\b(?:sign\s*in|log\s*in|login|giriş\s*yap)\b/.test(bodyText);
     const forms = document.forms.length;
+    const hasGateAction = [...document.querySelectorAll([
+      "button", 'input[type="submit"]', 'input[type="button"]', "a[href]", '[role="button"]'
+    ].join(","))].slice(0, 350).some((element) =>
+      isVisible(element) && Engine.classifyActionText(elementLabel(element)).eligible
+    );
     const lastPathPart = location.pathname.split("/").filter(Boolean).at(-1) || "";
     const tokenLikePath = /^[A-Za-z0-9_-]{6,32}(?:\.html)?$/.test(lastPathPart);
     const semanticGatePath = /\/(?:go|out|redirect|link|container|protected|p\d+)(?:\/|$)/i.test(location.pathname);
@@ -157,6 +194,8 @@
       gateScore: Math.min(100, gateScore),
       hasCaptcha,
       hardVerification,
+      hasGateAction,
+      hasAntiAdblock,
       candidates: candidates.slice(0, 8)
     };
   }
@@ -461,7 +500,7 @@
   }
 
   function removeObviousGateAds() {
-    if (!settings?.hideGateAds || currentPage?.gateScore < 35) return;
+    if (!settings?.hideGateAds || (currentPage?.gateScore < 35 && !journeyActive)) return;
     const selectors = [
       "ins.adsbygoogle", 'iframe[src*="doubleclick" i]', 'iframe[src*="googlesyndication" i]',
       '[id^="ad_" i]', '[id^="ads_" i]', '[id^="advert" i]',
@@ -485,6 +524,33 @@
         element.style.setProperty("pointer-events", "none", "important");
       }
     }
+  }
+
+  function dismissAntiAdblockOverlay() {
+    if (!settings?.dismissAntiAdblockOverlays || !journeyActive || !currentPage?.hasAntiAdblock) return false;
+    const matches = findAntiAdblockMessages();
+
+    let removed = false;
+    for (const match of matches.slice(0, 4)) {
+      let shell = match;
+      for (let parent = match.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+        const style = getComputedStyle(parent);
+        const rect = parent.getBoundingClientRect();
+        const overlayLike = /fixed|sticky/.test(style.position) || parent.matches(ANTI_ADBLOCK_OVERLAY_SELECTOR) ||
+          (rect.width >= innerWidth * 0.55 && rect.height >= innerHeight * 0.25 && Number.parseInt(style.zIndex, 10) >= 10);
+        if (overlayLike) shell = parent;
+        if (style.position === "fixed" && rect.width >= innerWidth * 0.8 && rect.height >= innerHeight * 0.8) break;
+      }
+      shell.style.setProperty("display", "none", "important");
+      shell.setAttribute("aria-hidden", "true");
+      removed = true;
+    }
+
+    if (removed && document.body) {
+      document.body.style.setProperty("overflow", "auto", "important");
+      document.documentElement.style.setProperty("overflow", "auto", "important");
+    }
+    return removed;
   }
 
   function eligibleActions() {
@@ -573,8 +639,11 @@
   }
 
   function attemptFastPass() {
-    if (!settings?.enabled || !settings.aggressiveFastPass || currentPage?.gateScore < 35) return;
+    if (!settings?.enabled || !settings.aggressiveFastPass) return;
     currentPage = scanPage();
+    const activeGate = currentPage.gateScore >= 35 || (journeyActive && (currentPage.hasGateAction || currentPage.hasAntiAdblock));
+    if (!activeGate) return;
+    if (dismissAntiAdblockOverlay()) currentPage = scanPage();
     const visibleResults = currentPage.candidates.filter((candidate) => candidate.source === "result-anchor" && candidate.risk?.safe);
     if (visibleResults.length) {
       completeVisibleResults(visibleResults);
@@ -676,16 +745,19 @@
     const response = await send({ type: "PAGE_STATE", page: currentPage });
     if (!response?.ok) return;
     settings = response.settings;
+    journeyActive = Boolean(response.journeyActive);
     if (!settings.enabled) return;
+    if (dismissAntiAdblockOverlay()) currentPage = scanPage();
     const finalCandidates = currentPage.candidates.filter((candidate) => candidate.final !== false && candidate.risk?.safe);
     const visibleResults = finalCandidates.filter((candidate) => candidate.source === "result-anchor");
     if (await completeVisibleResults(visibleResults)) return;
-    if (settings.blockPopupsOnGatePages && currentPage.gateScore >= 35) {
+    const activeGate = currentPage.gateScore >= 35 || (journeyActive && (currentPage.hasGateAction || currentPage.hasAntiAdblock));
+    if (settings.blockPopupsOnGatePages && activeGate) {
       document.documentElement.setAttribute("data-smart-link-guide-popup-guard", "active");
     } else {
       document.documentElement.removeAttribute("data-smart-link-guide-popup-guard");
     }
-    if (settings.aggressiveFastPass && currentPage.gateScore >= 35) {
+    if (settings.aggressiveFastPass && activeGate) {
       if (currentPage.hardVerification) {
         document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
       } else {
