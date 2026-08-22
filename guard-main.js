@@ -8,12 +8,48 @@
   const nativeSetInterval = window.setInterval.bind(window);
   const nativeClearInterval = window.clearInterval.bind(window);
   const managedIntervals = new Map();
+  const AD_GEOMETRY_SELECTOR = [
+    ".adsbox", ".ad-banner", ".banner-inner", ".banner-captcha",
+    'ins[data-sizes-desktop]', 'ins[data-sizes-mobile]', '[data-ad-slot]', '[data-ad-client]',
+    '[id^="ad_" i]', '[id^="ads_" i]', '[id^="advert" i]',
+    '[class~="ad-container" i]', '[class~="advertisement" i]'
+  ].join(",");
   const COUNTDOWN_NAMES = [
     "count", "counter", "countdown", "timer", "seconds", "timeLeft",
     "timeleft", "remaining", "remainingTime", "waitTime"
   ];
   let accelerator = null;
   let acceleratorStopsAt = 0;
+
+  function declaredAdDimension(element, axis, fallback) {
+    const declared = `${element.getAttribute?.("data-sizes-desktop") || ""},${element.getAttribute?.("data-sizes-mobile") || ""}`
+      .match(/\b(\d{2,4})x(\d{2,4})\b/i);
+    if (!declared) return fallback;
+    return axis === "width" ? Math.min(970, Number(declared[1])) : Math.min(600, Number(declared[2]));
+  }
+
+  function installAdGeometryShim(prototype, property, axis, fallback) {
+    if (!prototype) return;
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, property);
+    if (!descriptor?.configurable || typeof descriptor.get !== "function") return;
+    Object.defineProperty(prototype, property, {
+      ...descriptor,
+      get() {
+        const measured = descriptor.get.call(this);
+        try {
+          if (measured < 25 && this.matches?.(AD_GEOMETRY_SELECTOR)) {
+            return declaredAdDimension(this, axis, fallback);
+          }
+        } catch {}
+        return measured;
+      }
+    });
+  }
+
+  installAdGeometryShim(globalThis.HTMLElement?.prototype, "offsetWidth", "width", 300);
+  installAdGeometryShim(globalThis.HTMLElement?.prototype, "offsetHeight", "height", 90);
+  installAdGeometryShim(globalThis.Element?.prototype, "clientWidth", "width", 300);
+  installAdGeometryShim(globalThis.Element?.prototype, "clientHeight", "height", 90);
 
   window.addEventListener?.("blur", () => {
     if (!localCounterActive()) return;

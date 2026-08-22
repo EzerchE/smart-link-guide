@@ -7,6 +7,8 @@ const content = fs.readFileSync(path.join(__dirname, "..", "content.js"), "utf8"
 assert.match(content, /hasLocalCountdown/);
 assert.match(content, /hasCountdownValue\s*&&\s*hasCountdownContext/);
 assert.match(content, /hasLocalCountdown\s*\?\s*22\s*:\s*0/);
+assert.match(content, /serverTimingRequired/);
+assert.match(content, /form\.id\s*===\s*"go-link"/);
 assert.match(content, /step\\s\*\\d\+\\s\*\\\/\\s\*\\d\+/);
 assert.match(content, /counterStarter\s*=\s*eligibleActions\(\)\.find/);
 assert.match(content, /singleShot\s*=\s*action\.reason\s*===\s*"Sayaç başlatma adımı"/);

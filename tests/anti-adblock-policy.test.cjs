@@ -11,10 +11,15 @@ const adHider = content.match(/function removeObviousGateAds\(\)[\s\S]*?function
 assert.match(background, /dismissAntiAdblockOverlays:\s*true/);
 assert.match(adHider, /setProperty\("display",\s*"block",\s*"important"\)/);
 assert.match(adHider, /setProperty\("opacity",\s*"0",\s*"important"\)/);
-assert.match(adHider, /setProperty\("height",\s*"1px",\s*"important"\)/);
+assert.match(adHider, /data-sizes-desktop/);
+assert.match(adHider, /rect\.height\s*<\s*25/);
+assert.doesNotMatch(adHider, /setProperty\("height",\s*"1px"/);
 assert.doesNotMatch(adHider, /setProperty\("display",\s*"none"/);
 assert.match(content, /hasBlockedResource/);
 assert.match(content, /Geçiş bileşeni ağ filtresinde engellendi/);
 assert.match(guard, /data-smart-link-guide-resource-blocked/);
+assert.match(guard, /installAdGeometryShim/);
+assert.match(guard, /"offsetHeight",\s*"height",\s*90/);
+assert.match(guard, /"clientWidth",\s*"width",\s*300/);
 
 process.stdout.write("anti-adblock policy tests passed\n");

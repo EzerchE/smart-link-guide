@@ -104,6 +104,18 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
   const rejectedConfirmation = await send({ type: "CONFIRM_JOURNEY", destinationUrl: rejectedStep }, 8, rejectedStep);
   assert.equal(rejectedConfirmation.ok, false);
 
+  const serverTimed = await send({
+    type: "PAGE_STATE",
+    page: {
+      url: "https://timed.example/article",
+      gateScore: 45,
+      serverTimingRequired: true,
+      candidates: []
+    }
+  }, 18, "https://timed.example/article");
+  assert.equal(serverTimed.journeyActive, true);
+  assert.equal(serverTimed.naturalTiming, true);
+
   listeners.committed({ tabId: 8, frameId: 0, url: timedIntermediate });
   listeners.committed({ tabId: 8, frameId: 0, url: rejectedStep });
   listeners.committed({ tabId: 8, frameId: 0, url: timedIntermediate });

@@ -458,6 +458,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           hasCaptcha: Boolean(message.page?.hasCaptcha),
           hardVerification: Boolean(message.page?.hardVerification),
           hasGateAction: Boolean(message.page?.hasGateAction),
+          serverTimingRequired: Boolean(message.page?.serverTimingRequired),
           hasAntiAdblock: Boolean(message.page?.hasAntiAdblock),
           gateError: Boolean(message.page?.gateError),
           gateErrorMessage: String(message.page?.gateErrorMessage || "").slice(0, 300),
@@ -465,14 +466,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           updatedAt: Date.now()
         };
         tabStates.set(senderTabId, page);
-        if (!journeys.has(senderTabId) && page.url && Engine.requiresNaturalTiming(page.url)) {
+        if (!journeys.has(senderTabId) && page.url && (Engine.requiresNaturalTiming(page.url) || page.serverTimingRequired)) {
           startJourney(senderTabId, page.url);
         }
         let journey = journeys.get(senderTabId) || null;
+        if (journey && page.serverTimingRequired) journey.naturalTiming = true;
         const automaticJourneyFinished = Boolean(
           journey && !journey.manualConfirmation && journey.chain.length >= 2 &&
           page.gateScore < 15 && !page.hardVerification && !page.hasGateAction &&
           !page.hasAntiAdblock && !page.gateError && !Engine.requiresNaturalTiming(page.url)
+          && !page.serverTimingRequired
         );
         if (automaticJourneyFinished) {
           journeys.delete(senderTabId);

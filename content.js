@@ -225,6 +225,12 @@
     const likelyLogin = hasPasswordField &&
       /\b(?:sign\s*in|log\s*in|login|giriş\s*yap)\b/.test(bodyText);
     const forms = document.forms.length;
+    const serverTimingRequired = [...document.forms].some((form) => {
+      const actionUrl = Engine.normalizeUrl(form.action || location.href, location.href);
+      if (!actionUrl || String(form.method || "get").toLowerCase() !== "post") return false;
+      const actionPath = new URL(actionUrl).pathname;
+      return form.id === "go-link" || /\/(?:links?\/go|go-link|counter\/submit)(?:\/|$)/i.test(actionPath);
+    });
     const hasGateAction = [...document.querySelectorAll([
       "button", 'input[type="submit"]', 'input[type="button"]', "a[href]", '[role="button"]',
       '[onclick]', '[data-action]', '[data-step]', '[tabindex]:not([tabindex="-1"])', 'img[alt]', 'img[title]',
@@ -293,6 +299,7 @@
       hardVerification,
       hasGateAction,
       hasLocalCountdown,
+      serverTimingRequired,
       hasAntiAdblock,
       hasBlockedResource,
       gateError,
@@ -625,14 +632,18 @@
     ];
     for (const element of [...document.querySelectorAll(selectors.join(","))].slice(0, 80)) {
       if (element.closest('[class*="captcha" i], [id*="captcha" i]')) continue;
+      const declaredSize = `${element.getAttribute("data-sizes-desktop") || ""},${element.getAttribute("data-sizes-mobile") || ""}`
+        .match(/\b(\d{2,4})x(\d{2,4})\b/i);
+      const rect = element.getBoundingClientRect();
+      const preservedWidth = declaredSize ? Math.min(970, Number(declaredSize[1])) : 300;
+      const preservedHeight = declaredSize ? Math.min(600, Number(declaredSize[2])) : 90;
       element.style.setProperty("display", "block", "important");
       element.style.setProperty("opacity", "0", "important");
       element.style.setProperty("pointer-events", "none", "important");
       element.style.setProperty("overflow", "hidden", "important");
-      element.style.setProperty("width", "1px", "important");
-      element.style.setProperty("height", "1px", "important");
-      element.style.setProperty("min-width", "1px", "important");
-      element.style.setProperty("min-height", "1px", "important");
+      if (rect.width < 25) element.style.setProperty("width", `${preservedWidth}px`, "important");
+      if (rect.height < 25) element.style.setProperty("height", `${preservedHeight}px`, "important");
+      element.style.setProperty("max-width", "100%", "important");
       element.setAttribute("aria-hidden", "true");
     }
 
