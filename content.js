@@ -19,7 +19,68 @@
   let scheduledTargetSignature = null;
   let visibleCompletionSignature = null;
   let captchaSubmissionReadyAt = Number.POSITIVE_INFINITY;
+  let extensionContextActive = true;
   const actionAttempts = new Map();
+  const lifecycleTimers = new Set();
+
+  function stopForInvalidatedContext() {
+    if (!extensionContextActive) return;
+    extensionContextActive = false;
+    for (const timerId of lifecycleTimers) clearTimeout(timerId);
+    lifecycleTimers.clear();
+    fastPassObserver?.disconnect();
+    fastPassObserver = null;
+    fastPassThrottle = null;
+    scheduledTargetTimer = null;
+    scheduledTargetSignature = null;
+    document.documentElement.removeAttribute("data-smart-link-guide-popup-guard");
+    document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
+    removeCard();
+  }
+
+  function contextIsUsable() {
+    if (!extensionContextActive) return false;
+    try {
+      if (!chrome?.runtime?.id) {
+        stopForInvalidatedContext();
+        return false;
+      }
+      return true;
+    } catch {
+      stopForInvalidatedContext();
+      return false;
+    }
+  }
+
+  function handleContextError(error) {
+    const message = String(error?.message || error || "");
+    if (/extension context invalidated|message port closed|receiving end does not exist/i.test(message) || !contextIsUsable()) {
+      stopForInvalidatedContext();
+      return true;
+    }
+    return false;
+  }
+
+  function scheduleTask(callback, delay) {
+    if (!contextIsUsable()) return null;
+    let timerId = null;
+    timerId = setTimeout(() => {
+      lifecycleTimers.delete(timerId);
+      if (!contextIsUsable()) return;
+      try {
+        const result = callback();
+        if (result && typeof result.catch === "function") {
+          result.catch((error) => {
+            if (!handleContextError(error)) console.error("Akıllı Link Rehberi:", error);
+          });
+        }
+      } catch (error) {
+        if (!handleContextError(error)) console.error("Akıllı Link Rehberi:", error);
+      }
+    }, delay);
+    lifecycleTimers.add(timerId);
+    return timerId;
+  }
 
   function sampleVisibleText(limit = 7000) {
     if (!document.body) return "";
@@ -65,7 +126,16 @@
   }
 
   function send(message) {
-    return chrome.runtime.sendMessage(message).catch(() => ({ ok: false }));
+    if (!contextIsUsable()) return Promise.resolve({ ok: false });
+    try {
+      return Promise.resolve(chrome.runtime.sendMessage(message)).catch((error) => {
+        handleContextError(error);
+        return { ok: false };
+      });
+    } catch (error) {
+      handleContextError(error);
+      return Promise.resolve({ ok: false });
+    }
   }
 
   function addCandidate(target, metadata, output, seen) {
@@ -353,7 +423,7 @@
     }
 
     scheduledTargetSignature = signature;
-    scheduledTargetTimer = setTimeout(() => openTargetGroup(targets, { learnBundle }), 3000);
+    scheduledTargetTimer = scheduleTask(() => openTargetGroup(targets, { learnBundle }), 3000);
 
     showCard({
       title: "Hedef bulundu",
@@ -639,7 +709,7 @@
   }
 
   function attemptFastPass() {
-    if (!settings?.enabled || !settings.aggressiveFastPass) return;
+    if (!contextIsUsable() || !settings?.enabled || !settings.aggressiveFastPass) return;
     currentPage = scanPage();
     const activeGate = currentPage.gateScore >= 35 || (journeyActive && (currentPage.hasGateAction || currentPage.hasAntiAdblock));
     if (!activeGate) return;
@@ -663,13 +733,13 @@
   }
 
   function startFastPassAutomation() {
-    if (fastPassObserver || !document.body) return;
+    if (!contextIsUsable() || fastPassObserver || !document.body) return;
     const delays = [0, 120, 350, 800, 1500, 2600, 4200];
-    for (const delay of delays) setTimeout(attemptFastPass, delay);
+    for (const delay of delays) scheduleTask(attemptFastPass, delay);
 
     fastPassObserver = new MutationObserver(() => {
       clearTimeout(fastPassThrottle);
-      fastPassThrottle = setTimeout(attemptFastPass, 80);
+      fastPassThrottle = scheduleTask(attemptFastPass, 80);
     });
     fastPassObserver.observe(document.body, {
       childList: true,
@@ -677,13 +747,14 @@
       attributes: true,
       attributeFilter: ["disabled", "class", "style", "href", "data-state", "aria-checked"]
     });
-    setTimeout(() => {
+    scheduleTask(() => {
       fastPassObserver?.disconnect();
       fastPassObserver = null;
     }, 30_000);
   }
 
   document.addEventListener("click", (event) => {
+    if (!contextIsUsable()) return;
     const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
     if (!anchor || !settings?.enabled) return;
     const targetUrl = Engine.normalizeUrl(anchor.href, location.href);
@@ -713,17 +784,18 @@
   }, true);
 
   document.addEventListener("input", () => {
-    if (!settings?.enabled || !settings.aggressiveFastPass) return;
+    if (!contextIsUsable() || !settings?.enabled || !settings.aggressiveFastPass) return;
     captchaSubmissionReadyAt = Date.now() + 2500;
     clearTimeout(fastPassThrottle);
-    fastPassThrottle = setTimeout(() => {
+    fastPassThrottle = scheduleTask(() => {
       currentPage = scanPage();
       attemptFastPass();
       reportPage();
     }, 2500);
   }, true);
 
-  chrome.storage.onChanged.addListener((changes, areaName) => {
+  function handleStorageChange(changes, areaName) {
+    if (!contextIsUsable()) return;
     if (areaName !== "local" || !changes.settings?.newValue) return;
     settings = { ...settings, ...changes.settings.newValue };
     if (!settings.enabled || !settings.blockPopupsOnGatePages) {
@@ -738,9 +810,16 @@
       scheduledTargetSignature = null;
     }
     if (!settings.enabled || !settings.showAssistant) removeCard();
-  });
+  }
+
+  try {
+    if (contextIsUsable()) chrome.storage.onChanged.addListener(handleStorageChange);
+  } catch {
+    stopForInvalidatedContext();
+  }
 
   async function reportPage() {
+    if (!contextIsUsable()) return;
     currentPage = scanPage();
     const response = await send({ type: "PAGE_STATE", page: currentPage });
     if (!response?.ok) return;
@@ -803,9 +882,9 @@
   }
 
   reportPage().then(() => {
-    if (currentPage?.gateScore >= 25) {
-      setTimeout(reportPage, 1500);
-      setTimeout(reportPage, 4000);
+    if (contextIsUsable() && currentPage?.gateScore >= 25) {
+      scheduleTask(reportPage, 1500);
+      scheduleTask(reportPage, 4000);
     }
-  });
+  }).catch(() => {});
 })();
