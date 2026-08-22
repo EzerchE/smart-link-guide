@@ -6,6 +6,7 @@ const MAX_LEARNED_LINKS = 250;
 const MAX_LEARNED_BUNDLES = 100;
 const MAX_JOURNEY_AGE_MS = 10 * 60 * 1000;
 const AUTO_RULE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_REPEAT_VISITS = 3;
 
 const DEFAULT_STORE = Object.freeze({
   schemaVersion: SCHEMA_VERSION,
@@ -90,6 +91,10 @@ function startJourney(tabId, targetUrl, sourceUrl = null) {
     chain: [normalized],
     naturalTiming: Engine.requiresNaturalTiming(normalized),
     recoveryAttempts: 0,
+    navigationTrail: [],
+    visitCounts: {},
+    loopDetected: false,
+    blockedPopups: 0,
     startedAt: now,
     updatedAt: now
   };
@@ -103,6 +108,22 @@ function updateJourney(tabId, urlValue) {
   if (!journey || !normalized) return null;
   journey.currentUrl = normalized;
   journey.updatedAt = Date.now();
+  const key = Engine.canonicalKey(normalized);
+  if (key) {
+    journey.visitCounts = journey.visitCounts || {};
+    journey.navigationTrail = Array.isArray(journey.navigationTrail) ? journey.navigationTrail : [];
+    journey.visitCounts[key] = (journey.visitCounts[key] || 0) + 1;
+    journey.navigationTrail.push(key);
+    journey.navigationTrail = journey.navigationTrail.slice(-12);
+    const trail = journey.navigationTrail;
+    const alternatingLoop = trail.length >= 4 &&
+      trail.at(-1) === trail.at(-3) && trail.at(-2) === trail.at(-4) && trail.at(-1) !== trail.at(-2);
+    const threeStepLoop = trail.length >= 6 &&
+      trail.at(-1) === trail.at(-4) && trail.at(-2) === trail.at(-5) && trail.at(-3) === trail.at(-6);
+    if (journey.visitCounts[key] >= MAX_REPEAT_VISITS || alternatingLoop || threeStepLoop) {
+      journey.loopDetected = true;
+    }
+  }
   if (journey.chain.at(-1) !== normalized && journey.chain.length < 30) journey.chain.push(normalized);
   return journey;
 }
@@ -360,13 +381,23 @@ chrome.webNavigation.onCommitted.addListener((details) => {
 chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => {
   const sourceJourney = journeys.get(details.sourceTabId);
   if (!sourceJourney) return;
-  journeys.set(details.tabId, {
-    ...sourceJourney,
-    tabId: details.tabId,
-    currentUrl: Engine.normalizeUrl(details.url) || sourceJourney.currentUrl,
-    chain: [...sourceJourney.chain],
-    updatedAt: Date.now()
-  });
+  (async () => {
+    const store = await getStore();
+    if (store.settings.enabled && store.settings.blockPopupsOnGatePages) {
+      sourceJourney.blockedPopups = (sourceJourney.blockedPopups || 0) + 1;
+      await chrome.tabs.remove(details.tabId).catch(() => {});
+      return;
+    }
+    journeys.set(details.tabId, {
+      ...sourceJourney,
+      tabId: details.tabId,
+      currentUrl: Engine.normalizeUrl(details.url) || sourceJourney.currentUrl,
+      chain: [...sourceJourney.chain],
+      navigationTrail: [...(sourceJourney.navigationTrail || [])],
+      visitCounts: { ...(sourceJourney.visitCounts || {}) },
+      updatedAt: Date.now()
+    });
+  })().catch(console.error);
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -395,7 +426,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           updatedAt: Date.now()
         };
         tabStates.set(senderTabId, page);
-        if (!journeys.has(senderTabId) && page.url && page.gateScore >= 45) startJourney(senderTabId, page.url);
+        if (!journeys.has(senderTabId) && page.url && (
+          page.gateScore >= 45 || Engine.requiresNaturalTiming(page.url)
+        )) startJourney(senderTabId, page.url);
         const journey = journeys.get(senderTabId) || null;
         let recoveryUrl = null;
         if (page.gateError && journey) {
@@ -411,9 +444,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           pendingConfirmation: confirmationFor(senderTabId, page.url, page),
           journeyActive: Boolean(journey),
           naturalTiming: Boolean(journey?.naturalTiming),
+          loopDetected: Boolean(journey?.loopDetected),
+          blockedPopups: Number(journey?.blockedPopups || 0),
           recoveryUrl,
           settings: (await getStore()).settings
         };
+      }
+      case "GET_GUARD_STATE": {
+        const tabId = Number.isInteger(message.tabId) ? message.tabId : senderTabId;
+        const store = await getStore();
+        return {
+          ok: true,
+          active: Boolean(
+            Number.isInteger(tabId) && journeys.has(tabId) &&
+            store.settings.enabled && store.settings.blockPopupsOnGatePages
+          )
+        };
+      }
+      case "RESET_LOOP": {
+        const tabId = Number.isInteger(message.tabId) ? message.tabId : senderTabId;
+        const journey = journeys.get(tabId);
+        if (!journey) return { ok: false };
+        journey.loopDetected = false;
+        journey.navigationTrail = [];
+        journey.visitCounts = {};
+        return { ok: true };
       }
       case "START_JOURNEY": {
         const tabId = Number.isInteger(message.tabId) ? message.tabId : senderTabId;

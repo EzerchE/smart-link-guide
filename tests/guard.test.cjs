@@ -4,6 +4,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 let originalOpenCalls = 0;
+let originalAlertCalls = 0;
 let observerCallback = null;
 const timeoutDelays = [];
 const intervalDelays = [];
@@ -14,9 +15,17 @@ const document = {
   },
   addEventListener() {}
 };
+class HTMLFormElement {
+  constructor() {
+    this.target = "";
+    this.submitted = 0;
+  }
+  submit() { this.submitted += 1; }
+}
 const window = {
   count: 5,
   open(...args) { originalOpenCalls += 1; return { args }; },
+  alert() { originalAlertCalls += 1; },
   setTimeout(callback, delay) { timeoutDelays.push(delay); return timeoutDelays.length; },
   setInterval(callback, delay) { intervalDelays.push(delay); return intervalDelays.length; },
   clearInterval() {},
@@ -29,7 +38,7 @@ class MutationObserver {
 
 vm.runInNewContext(
   fs.readFileSync(path.join(__dirname, "..", "guard-main.js"), "utf8"),
-  { window, document, CustomEvent: class CustomEvent {}, MutationObserver, Date, Number, Function }
+  { window, document, HTMLFormElement, CustomEvent: class CustomEvent {}, MutationObserver, Date, Number, Function }
 );
 
 assert.ok(window.open("https://normal.example"));
@@ -43,6 +52,13 @@ observerCallback();
 assert.equal(window.count, 0);
 assert.equal(window.open("https://popup.example"), null);
 assert.equal(originalOpenCalls, 1);
+window.alert("completed");
+assert.equal(originalAlertCalls, 0);
+const popupForm = new HTMLFormElement();
+popupForm.target = "_blank";
+popupForm.submit();
+assert.equal(popupForm.target, "_self");
+assert.equal(popupForm.submitted, 1);
 
 window.setTimeout(function countdownRedirect() {}, 3000);
 window.setInterval(function updateTimer() {}, 1000);

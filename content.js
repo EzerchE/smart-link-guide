@@ -854,6 +854,24 @@
       document.documentElement.removeAttribute("data-smart-link-guide-natural-timing");
     }
     if (!settings.enabled) return;
+    if (response.loopDetected && journeyActive) {
+      fastPassObserver?.disconnect();
+      fastPassObserver = null;
+      document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
+      document.documentElement.setAttribute("data-smart-link-guide-popup-guard", "active");
+      removeCard();
+      showCard({
+        title: "Yönlendirme döngüsü durduruldu",
+        text: "Aynı geçiş adımları tekrarlandığı için otomatik işlem durduruldu. İsterseniz mevcut sayfada yalnızca bir ek denemeye izin verebilirsiniz.",
+        primaryLabel: "Bir kez daha dene",
+        onPrimary: async () => {
+          const reset = await send({ type: "RESET_LOOP" });
+          if (reset?.ok) location.reload();
+        },
+        tone: "danger"
+      });
+      return;
+    }
     if (currentPage.gateError && journeyActive) {
       clearTimeout(scheduledTargetTimer);
       scheduledTargetTimer = null;

@@ -7,6 +7,7 @@ const listeners = {};
 const storage = {};
 const tabUpdates = [];
 const tabCreates = [];
+const tabRemovals = [];
 
 const chrome = {
   storage: {
@@ -27,7 +28,8 @@ const chrome = {
   tabs: {
     onRemoved: { addListener(listener) { listeners.tabRemoved = listener; } },
     async update(tabId, patch) { tabUpdates.push({ tabId, patch }); },
-    async create(patch) { tabCreates.push(patch); return { id: 100 + tabCreates.length, ...patch }; }
+    async create(patch) { tabCreates.push(patch); return { id: 100 + tabCreates.length, ...patch }; },
+    async remove(tabId) { tabRemovals.push(tabId); }
   }
 };
 
@@ -70,6 +72,10 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
   const timedIntermediate = "https://intermediate.example/wait";
   const rejectedStep = "https://intermediate.example/links/go";
   assert.equal((await send({ type: "START_JOURNEY", targetUrl: signedGateway })).ok, true);
+  assert.equal((await send({ type: "GET_GUARD_STATE" })).active, true);
+  listeners.createdTarget({ sourceTabId: 8, tabId: 81, url: "https://popup.example/ad" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(tabRemovals, [81]);
   listeners.committed({ tabId: 8, frameId: 0, url: timedIntermediate });
   assert.equal((await send({
     type: "START_JOURNEY",
@@ -97,6 +103,16 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
   assert.equal(repeatedRejection.recoveryUrl, null);
   const rejectedConfirmation = await send({ type: "CONFIRM_JOURNEY", destinationUrl: rejectedStep }, 8, rejectedStep);
   assert.equal(rejectedConfirmation.ok, false);
+
+  listeners.committed({ tabId: 8, frameId: 0, url: timedIntermediate });
+  listeners.committed({ tabId: 8, frameId: 0, url: rejectedStep });
+  listeners.committed({ tabId: 8, frameId: 0, url: timedIntermediate });
+  const loopState = await send({
+    type: "PAGE_STATE",
+    page: { url: timedIntermediate, gateScore: 20, candidates: [] }
+  }, 8, timedIntermediate);
+  assert.equal(loopState.loopDetected, true);
+  assert.equal((await send({ type: "RESET_LOOP" }, 8, timedIntermediate)).ok, true);
 
   const gateway = "https://tpi.li/AbCdEf123";
   const antiAdblockIntermediate = "https://intermediate.example/article";

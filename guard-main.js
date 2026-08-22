@@ -2,6 +2,8 @@
   "use strict";
 
   const nativeOpen = window.open;
+  const nativeAlert = window.alert;
+  const nativeFormSubmit = globalThis.HTMLFormElement?.prototype?.submit;
   const nativeSetTimeout = window.setTimeout.bind(window);
   const nativeSetInterval = window.setInterval.bind(window);
   const nativeClearInterval = window.clearInterval.bind(window);
@@ -47,6 +49,21 @@
     }
     return nativeOpen.apply(this, args);
   };
+
+  window.alert = function guardedAlert(...args) {
+    if (popupGuardActive()) {
+      window.dispatchEvent(new CustomEvent("smart-link-guide-dialog-blocked"));
+      return undefined;
+    }
+    return nativeAlert?.apply(this, args);
+  };
+
+  if (nativeFormSubmit) {
+    globalThis.HTMLFormElement.prototype.submit = function guardedFormSubmit(...args) {
+      if (popupGuardActive() && /^_(?:blank|new)$/i.test(this.target || "")) this.target = "_self";
+      return nativeFormSubmit.apply(this, args);
+    };
+  }
 
   window.setTimeout = function fastPassTimeout(callback, delay, ...args) {
     return nativeSetTimeout(callback, acceleratedDelay(callback, delay, false), ...args);
