@@ -48,6 +48,9 @@ assert.equal(Engine.detectsAntiAdblockMessage("Ads Blocker Detected! Please disa
 assert.equal(Engine.detectsAntiAdblockMessage("Reklam engelleyiciyi kapatın ve devam edin."), true);
 assert.equal(Engine.detectsAntiAdblockMessage("A guide to privacy-friendly advertising"), false);
 assert.equal(Engine.classifyActionText("Click Image & Wait 7 seconds").reason, "Sayaç başlatma adımı");
+assert.equal(Engine.classifyActionText("Click on below Button to start counter").reason, "Sayaç başlatma adımı");
+assert.equal(Engine.classifyActionText("Click here to verify").reason, "Sayaç başlatma adımı");
+assert.ok(Engine.classifyActionText("Click here to verify").score > Engine.classifyActionText("FAST DOWNLOAD").score);
 assert.equal(Engine.classifyActionText("Görsele tıkla ve bekle").reason, "Sayaç başlatma adımı");
 assert.equal(Engine.requiresNaturalTiming("https://jump.example/goto/ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/token"), true);
 assert.equal(Engine.requiresNaturalTiming("https://jump.example/go/short"), false);

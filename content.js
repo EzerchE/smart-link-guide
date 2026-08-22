@@ -4,6 +4,7 @@
   if (window.top !== window || !globalThis.LinkGuideEngine) return;
   const Engine = globalThis.LinkGuideEngine;
   const CARD_ID = "smart-link-guide-card";
+  const ACTION_GUIDE_ID = "smart-link-guide-action-guide";
   const MAX_ANCHORS_TO_SCAN = 400;
   const ANTI_ADBLOCK_OVERLAY_SELECTOR = [
     '[role="dialog"]', '[aria-modal="true"]', '[class*="modal" i]', '[id*="modal" i]',
@@ -21,6 +22,9 @@
   let visibleCompletionSignature = null;
   let captchaSubmissionReadyAt = Number.POSITIVE_INFINITY;
   let extensionContextActive = true;
+  let guidedElement = null;
+  let guidedOutline = "";
+  let guidedBoxShadow = "";
   const actionAttempts = new Map();
   const lifecycleTimers = new Set();
 
@@ -37,6 +41,8 @@
     document.documentElement.removeAttribute("data-smart-link-guide-popup-guard");
     document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
     document.documentElement.removeAttribute("data-smart-link-guide-natural-timing");
+    document.documentElement.removeAttribute("data-smart-link-guide-local-counter");
+    clearActionGuide();
     removeCard();
   }
 
@@ -172,13 +178,15 @@
     const hasAntiAdblock = findAntiAdblockMessages().length > 0;
     const markerPatterns = [
       /\bcontinue\b/, /get\s*link/, /skip\s*(?:ad|advert)/, /please\s*wait/,
-      /click\s+(?:the\s+)?(?:image|picture|photo|box|button)\s*(?:(?:&|and)\s*)?wait/,
+      /click\s+(?:(?:on\s+)?(?:the\s+)?(?:below\s+)?)?(?:image|picture|photo|box|button)(?:\s*(?:(?:&|and)\s*)?wait|\s+to\s+start\s+(?:the\s+)?counter)/,
+      /click\s+here\s+to\s+(?:verify|start\s+(?:the\s+)?counter)/,
       /(?:you\s+are\s+on\s+)?step\s*\d+\s*\/\s*\d+/,
       /unlock\s*link/, /proceed\s*to/, /click\s*to\s*proceed/, /bağlantıya\s*git/, /devam\s*et/,
       /linki\s*aç/, /geri\s*sayım/, /bekleyin/, /\bredirect(?:ing|ion)?\b/,
       /protected\s*(?:link|download)/
     ];
     const markerCount = markerPatterns.filter((pattern) => pattern.test(bodyText)).length;
+    const hasLocalCountdown = /\b(?:please\s+)?wait\s+\d{1,3}\s*seconds?\b|\b\d{1,3}\s*seconds?\s*(?:remaining|left)\b|\b(?:counter|timer)\s*[:\-]?\s*\d{1,3}\b|\b\d{1,3}\s*saniye\s*(?:bekle|kaldı)\b/.test(bodyText);
     const hasCaptcha = /captcha|i['’]?m\s+a\s+human|ben\s+insanım/.test(bodyText) ||
       Boolean(document.querySelector('[class*="captcha" i], [id*="captcha" i], iframe[src*="captcha" i], iframe[src*="recaptcha" i]'));
     const captchaWidgets = [...document.querySelectorAll([
@@ -274,6 +282,7 @@
       hasCaptcha,
       hardVerification,
       hasGateAction,
+      hasLocalCountdown,
       hasAntiAdblock,
       gateError,
       gateErrorMessage: gateError ? gateErrorText.slice(0, 300) : "",
@@ -284,6 +293,47 @@
   function removeCard(resetSignature = true) {
     document.getElementById(CARD_ID)?.remove();
     if (resetSignature) lastCardSignature = null;
+  }
+
+  function clearActionGuide() {
+    document.getElementById(ACTION_GUIDE_ID)?.remove();
+    if (guidedElement?.isConnected) {
+      guidedElement.style.removeProperty("outline");
+      guidedElement.style.removeProperty("box-shadow");
+      if (guidedOutline) guidedElement.style.outline = guidedOutline;
+      if (guidedBoxShadow) guidedElement.style.boxShadow = guidedBoxShadow;
+      guidedElement.removeAttribute("data-smart-link-guide-recommended");
+    }
+    guidedElement = null;
+    guidedOutline = "";
+    guidedBoxShadow = "";
+  }
+
+  function guideAction(action) {
+    const element = action?.element;
+    if (!settings?.showAssistant || !(element instanceof HTMLElement) || !isVisible(element)) return;
+    if (guidedElement === element && document.getElementById(ACTION_GUIDE_ID)) return;
+    clearActionGuide();
+    guidedElement = element;
+    guidedOutline = element.style.outline;
+    guidedBoxShadow = element.style.boxShadow;
+    element.setAttribute("data-smart-link-guide-recommended", "true");
+    element.style.setProperty("outline", "4px solid #10b981", "important");
+    element.style.setProperty("box-shadow", "0 0 0 7px rgba(16,185,129,.28)", "important");
+
+    const rect = element.getBoundingClientRect();
+    const label = document.createElement("div");
+    label.id = ACTION_GUIDE_ID;
+    label.textContent = settings.autoSubmitSteps
+      ? "Doğru geçiş düğmesi · otomatik çalıştırılıyor"
+      : "Doğru geçiş düğmesi · buraya tıklayın";
+    label.style.cssText = [
+      "position:absolute", `top:${Math.max(8, scrollY + rect.top - 38)}px`,
+      `left:${Math.max(8, scrollX + rect.left)}px`, "z-index:2147483646",
+      "padding:7px 10px", "border-radius:8px", "background:#047857", "color:#fff",
+      "font:700 12px system-ui", "pointer-events:none", "box-shadow:0 5px 16px rgba(0,0,0,.28)"
+    ].join(";");
+    (document.body || document.documentElement).append(label);
   }
 
   function makeButton(label, primary, onClick) {
@@ -742,29 +792,41 @@
     const activeGate = currentPage.gateScore >= 35 || (journeyActive && (
       currentPage.gateScore >= 15 || currentPage.hasGateAction || currentPage.hasAntiAdblock
     ));
-    if (!activeGate) return;
+    if (!activeGate) {
+      document.documentElement.removeAttribute("data-smart-link-guide-local-counter");
+      return;
+    }
+    if (currentPage.hasLocalCountdown && !naturalTimingMode && !currentPage.hardVerification) {
+      document.documentElement.setAttribute("data-smart-link-guide-local-counter", "active");
+    } else {
+      document.documentElement.removeAttribute("data-smart-link-guide-local-counter");
+    }
     if (dismissAntiAdblockOverlay()) currentPage = scanPage();
     const visibleResults = currentPage.candidates.filter((candidate) => candidate.source === "result-anchor" && candidate.risk?.safe);
     if (visibleResults.length) {
+      clearActionGuide();
       completeVisibleResults(visibleResults);
       return;
     }
     if (currentPage.hardVerification) {
+      clearActionGuide();
       document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
       return;
     }
     const counterStarter = eligibleActions().find((action) => action.reason === "Sayaç başlatma adımı");
     if (counterStarter) {
-      triggerAction(counterStarter);
+      guideAction(counterStarter);
+      if (settings.autoSubmitSteps) triggerAction(counterStarter);
       removeObviousGateAds();
       return;
     }
     removeObviousGateAds();
     if (naturalTimingMode) document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
     else document.documentElement.setAttribute("data-smart-link-guide-aggressive", "active");
-    if (!settings.autoSubmitSteps) return;
-
     const action = eligibleActions()[0];
+    if (action) guideAction(action);
+    else clearActionGuide();
+    if (!settings.autoSubmitSteps) return;
     if (action) triggerAction(action);
     else tryFallbackForm();
   }
@@ -854,6 +916,7 @@
     }
     if (!settings.enabled || !settings.aggressiveFastPass) {
       document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
+      document.documentElement.removeAttribute("data-smart-link-guide-local-counter");
       fastPassObserver?.disconnect();
       fastPassObserver = null;
       clearTimeout(scheduledTargetTimer);
@@ -880,6 +943,7 @@
     if (naturalTimingMode) {
       document.documentElement.setAttribute("data-smart-link-guide-natural-timing", "active");
       document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
+      document.documentElement.removeAttribute("data-smart-link-guide-local-counter");
     } else {
       document.documentElement.removeAttribute("data-smart-link-guide-natural-timing");
     }
@@ -945,9 +1009,15 @@
       } else {
         if (!naturalTimingMode) document.documentElement.setAttribute("data-smart-link-guide-aggressive", "active");
       }
+      if (currentPage.hasLocalCountdown && !naturalTimingMode && !currentPage.hardVerification) {
+        document.documentElement.setAttribute("data-smart-link-guide-local-counter", "active");
+      } else {
+        document.documentElement.removeAttribute("data-smart-link-guide-local-counter");
+      }
       startFastPassAutomation();
     } else {
       document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
+      document.documentElement.removeAttribute("data-smart-link-guide-local-counter");
     }
     const finalTargets = uniqueSafeTargets(finalCandidates.map((candidate) => candidate.url));
     if (response.pendingConfirmation) removeCard();

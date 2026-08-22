@@ -178,7 +178,7 @@
 
     const rules = [
       { pattern: /\b(?:(?:i['’]?m|i\s+am)\s+(?:a\s+)?human|ben\s+insanım)\b/, score: 100, reason: "Basit insan onay adımı" },
-      { pattern: /click\s+(?:the\s+)?(?:image|picture|photo|box|button)(?:\s*(?:&|and)\s*wait|\s+then\s+wait)?|(?:görsele|resme|kutuya|düğmeye)\s*tıkla(?:\s+ve\s+bekle)?/, score: 99, reason: "Sayaç başlatma adımı" },
+      { pattern: /click\s+(?:(?:on\s+)?(?:the\s+)?(?:below\s+)?)?(?:image|picture|photo|box|button)(?:\s*(?:&|and)\s*wait|\s+then\s+wait|\s+to\s+start\s+(?:the\s+)?counter)?|click\s+here\s+to\s+(?:verify|start\s+(?:the\s+)?counter)|(?:görsele|resme|kutuya|düğmeye)\s*tıkla(?:\s+ve\s+bekle)?/, score: 99, reason: "Sayaç başlatma adımı" },
       { pattern: /get\s*(?:the\s*)?link|linki\s*(?:al|göster)/, score: 98, reason: "Hedef bağlantıyı alma" },
       { pattern: /skip\s*(?:ad|advertisement)|reklamı\s*geç/, score: 96, reason: "Reklam adımını geçme" },
       { pattern: /click\s*(?:here\s*)?to\s*(?:continue|proceed)|continue|proceed|devam\s*et|sonraki\s*adım/, score: 92, reason: "Devam adımı" },

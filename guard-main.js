@@ -7,6 +7,7 @@
   const nativeSetTimeout = window.setTimeout.bind(window);
   const nativeSetInterval = window.setInterval.bind(window);
   const nativeClearInterval = window.clearInterval.bind(window);
+  const managedIntervals = new Map();
   const COUNTDOWN_NAMES = [
     "count", "counter", "countdown", "timer", "seconds", "timeLeft",
     "timeleft", "remaining", "remainingTime", "waitTime"
@@ -23,6 +24,10 @@
       document.documentElement?.getAttribute("data-smart-link-guide-natural-timing") !== "active";
   }
 
+  function localCounterActive() {
+    return document.documentElement?.getAttribute("data-smart-link-guide-local-counter") === "active";
+  }
+
   function transitionCallback(callback) {
     try {
       const source = typeof callback === "function"
@@ -36,7 +41,7 @@
 
   function acceleratedDelay(callback, delay, interval = false) {
     const numericDelay = Number(delay) || 0;
-    if (!aggressiveActive() || !transitionCallback(callback)) return numericDelay;
+    if (!aggressiveActive() || (!transitionCallback(callback) && !localCounterActive())) return numericDelay;
     if (interval && numericDelay >= 250 && numericDelay <= 5000) return 50;
     if (!interval && numericDelay >= 500 && numericDelay <= 60000) return 25;
     return numericDelay;
@@ -70,8 +75,31 @@
   };
 
   window.setInterval = function fastPassInterval(callback, delay, ...args) {
-    return nativeSetInterval(callback, acceleratedDelay(callback, delay, true), ...args);
+    const originalDelay = Number(delay) || 0;
+    const currentDelay = acceleratedDelay(callback, originalDelay, true);
+    const logicalId = nativeSetInterval(callback, currentDelay, ...args);
+    managedIntervals.set(logicalId, { callback, originalDelay, args, currentDelay, currentId: logicalId });
+    return logicalId;
   };
+
+  window.clearInterval = function fastPassClearInterval(logicalId) {
+    const record = managedIntervals.get(logicalId);
+    if (record) {
+      managedIntervals.delete(logicalId);
+      return nativeClearInterval(record.currentId);
+    }
+    return nativeClearInterval(logicalId);
+  };
+
+  function reconcileManagedIntervals() {
+    for (const record of managedIntervals.values()) {
+      const targetDelay = acceleratedDelay(record.callback, record.originalDelay, true);
+      if (targetDelay === record.currentDelay) continue;
+      nativeClearInterval(record.currentId);
+      record.currentId = nativeSetInterval(record.callback, targetDelay, ...record.args);
+      record.currentDelay = targetDelay;
+    }
+  }
 
   function resetKnownCountdowns() {
     if (!aggressiveActive()) return;
@@ -87,6 +115,7 @@
   function startAccelerator() {
     acceleratorStopsAt = Date.now() + 20_000;
     resetKnownCountdowns();
+    reconcileManagedIntervals();
     if (accelerator) return;
     accelerator = nativeSetInterval(() => {
       if (!aggressiveActive() || Date.now() >= acceleratorStopsAt) {
@@ -100,13 +129,14 @@
 
   const attributeObserver = new MutationObserver(() => {
     if (aggressiveActive()) startAccelerator();
+    else reconcileManagedIntervals();
   });
 
   function observeRoot() {
     if (!document.documentElement) return;
     attributeObserver.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-smart-link-guide-aggressive", "data-smart-link-guide-natural-timing"]
+      attributeFilter: ["data-smart-link-guide-aggressive", "data-smart-link-guide-natural-timing", "data-smart-link-guide-local-counter"]
     });
     if (aggressiveActive()) startAccelerator();
   }
