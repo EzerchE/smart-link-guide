@@ -128,7 +128,7 @@ async function getDecision(urlValue, hardVerification = false) {
         targets,
         reason: `Daha önce doğrulanan ${targets.length} hedeflik container`,
         learned: true,
-        auto: Boolean(store.settings.autoOpenLearned && fresh && !hardVerification),
+        auto: Boolean(targets.length === 1 && store.settings.autoOpenLearned && fresh && !hardVerification),
         score: 100,
         risk: { safe: true, level: "safe", reasons: [] }
       };
@@ -372,24 +372,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       case "LEARN_BUNDLE":
         return { ok: true, entry: await learnBundle(message.sourceUrl, message.targets) };
-      case "OPEN_URLS": {
-        const values = Array.isArray(message.urls) ? message.urls.slice(0, 12) : [];
-        const targets = [];
-        const seen = new Set();
-        for (const value of values) {
-          const target = Engine.cleanTracking(Engine.normalizeUrl(value));
-          const key = Engine.canonicalKey(target);
-          if (!target || !key || seen.has(key) || !Engine.assessRisk(target).safe) continue;
-          seen.add(key);
-          targets.push(target);
-        }
-        if (!targets.length) throw new Error("Açılabilecek güvenli hedef bulunamadı.");
-        if (message.learnSource) await learnBundle(message.learnSource, targets);
-        for (const target of targets) {
-          await chrome.tabs.create({ url: target, active: false, openerTabId: senderTabId });
-        }
-        return { ok: true, opened: targets.length };
-      }
       case "GET_POPUP_STATE":
         return { ok: true, state: await getPopupState(message.tabId, message.currentUrl) };
       case "UPDATE_SETTINGS": {

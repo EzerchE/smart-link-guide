@@ -121,12 +121,12 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
   assert.equal(bundleLearned.ok, true);
   assert.equal(storage.learnedBundles.length, 1);
   const bundleDecision = await send({ type: "GET_DECISION", url: container });
-  assert.equal(bundleDecision.decision.auto, true);
+  assert.equal(bundleDecision.decision.auto, false);
   assert.deepEqual([...bundleDecision.decision.targets], bundleTargets);
 
-  const opened = await send({ type: "OPEN_URLS", urls: bundleTargets, learnSource: container });
-  assert.equal(opened.opened, 2);
-  assert.equal(tabCreates.length, 2);
+  const openGroupAttempt = await send({ type: "OPEN_URLS", urls: bundleTargets, learnSource: container });
+  assert.equal(openGroupAttempt.ok, false);
+  assert.equal(tabCreates.length, 0);
 
   const filecryptContainer = "https://filecrypt.cc/Container/ABC123.html";
   const filecryptDestination = "https://files.example/final-package";
@@ -137,6 +137,7 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
   assert.equal(containerConfirmed.ok, true);
   const filecryptDecision = await send({ type: "GET_DECISION", url: filecryptContainer });
   assert.deepEqual([...filecryptDecision.decision.targets], [filecryptDestination]);
+  assert.equal(filecryptDecision.decision.auto, true);
 
   const dangerous = await send({
     type: "OPEN_URL",

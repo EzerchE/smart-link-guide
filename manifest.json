@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "Akıllı Link Rehberi",
   "short_name": "Link Rehberi",
-  "version": "0.3.1",
-  "description": "Sayaçlı geçişleri hızlandırır; tek ve çoklu hedefleri üç saniyede açıp yerel olarak öğrenir.",
+  "version": "0.3.2",
+  "description": "Sayaçlı geçişleri hızlandırır; görünür sonuçta durur ve güvenli hedefleri yerel olarak öğrenir.",
   "minimum_chrome_version": "102",
   "permissions": [
     "storage",

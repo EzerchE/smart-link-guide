@@ -12,8 +12,8 @@ Bu Chrome Manifest V3 eklentisi, reklam/yönlendirme sayfalarındaki açık hede
 6. Yüksek olasılıklı geçiş sayfalarında script kaynaklı popup'ları koşullu olarak bastırır ve dinamik hedefi 1,5/4 saniyede yeniden kontrol eder.
 7. Agresif FastPass modunda yaygın sayaç değişkenlerini sıfırlar, geçiş timer'larını hızlandırır ve kilitli Continue/Get Link/I'm Human kontrollerini otomatik çalıştırır.
 8. Belirgin reklam kutularını ve şeffaf tıklama katmanlarını yalnız geçiş sayfasında bastırır.
-9. Güvenli, açık hedefleri üç saniyelik iptal edilebilir gecikmeyle otomatik açar.
-10. Container sayfalarının ürettiği birden çok hedefi ayrı sekmelerde açar ve tek bağlantı yerine hedef paketi olarak öğrenir.
+9. Sayfada görünmeyen, güvenli ve tek bir açık hedefi üç saniyelik iptal edilebilir gecikmeyle aynı sekmede açar.
+10. Container sayfalarının görünür sonuç bağlantılarını tamamlanmış aşama sayar ve hedef paketi olarak yerel öğrenebilir.
 
 `#` adresli JavaScript geçiş düğmeleri gerçek tıklama olarak çalıştırılır. `/Link/1` gibi aynı alan adındaki ara uçlar nihai hedef sayılmaz.
 

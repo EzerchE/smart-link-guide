@@ -12,6 +12,7 @@
   let fastPassThrottle = null;
   let scheduledTargetTimer = null;
   let scheduledTargetSignature = null;
+  let visibleCompletionSignature = null;
   let captchaSubmissionReadyAt = Number.POSITIVE_INFINITY;
   const actionAttempts = new Map();
 
@@ -245,6 +246,32 @@
     return targets;
   }
 
+  async function completeVisibleResults(candidates) {
+    const targets = uniqueSafeTargets(candidates.map((candidate) => candidate.url));
+    if (!targets.length) return false;
+
+    clearTimeout(scheduledTargetTimer);
+    scheduledTargetTimer = null;
+    scheduledTargetSignature = null;
+    clearTimeout(fastPassThrottle);
+    fastPassThrottle = null;
+    fastPassObserver?.disconnect();
+    fastPassObserver = null;
+    document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
+    removeCard();
+
+    const signature = targets.map(Engine.canonicalKey).join("|");
+    if (
+      signature !== visibleCompletionSignature &&
+      Engine.isContainerPage(location.href) &&
+      candidates.every((candidate) => candidate.learnable !== false)
+    ) {
+      visibleCompletionSignature = signature;
+      await send({ type: "LEARN_BUNDLE", sourceUrl: location.href, targets });
+    }
+    return true;
+  }
+
   async function openTargetGroup(values, { learnBundle = false } = {}) {
     const targets = uniqueSafeTargets(values);
     if (!targets.length) return;
@@ -259,18 +286,12 @@
       return;
     }
 
-    const response = await send({
-      type: "OPEN_URLS",
-      urls: targets,
-      learnSource: learnBundle ? location.href : null
+    if (learnBundle) await send({ type: "LEARN_BUNDLE", sourceUrl: location.href, targets });
+    showCard({
+      title: `${targets.length} hedef hazır`,
+      text: "Görünür sonuç bağlantıları kullanıma hazır.",
+      tone: "success"
     });
-    if (response?.ok) {
-      showCard({
-        title: `${targets.length} hedef açıldı`,
-        text: "Sonuç bağlantıları ayrı sekmelerde açıldı ve bu container yerel olarak öğrenildi.",
-        tone: "success"
-      });
-    }
   }
 
   function scheduleTargetGroup(values, { learnBundle = false, reason = "Hedef bulundu" } = {}) {
@@ -279,14 +300,27 @@
     const signature = targets.map(Engine.canonicalKey).join("|");
     if (scheduledTargetSignature === signature && scheduledTargetTimer) return;
     clearTimeout(scheduledTargetTimer);
+
+    if (targets.length > 1) {
+      scheduledTargetTimer = null;
+      scheduledTargetSignature = null;
+      if (learnBundle) send({ type: "LEARN_BUNDLE", sourceUrl: location.href, targets });
+      showCard({
+        title: `${targets.length} hedef hazır`,
+        text: "Görünür sonuç bağlantıları kullanıma hazır.",
+        tone: "success"
+      });
+      return;
+    }
+
     scheduledTargetSignature = signature;
     scheduledTargetTimer = setTimeout(() => openTargetGroup(targets, { learnBundle }), 3000);
 
     showCard({
-      title: targets.length > 1 ? `${targets.length} hedef bulundu` : "Hedef bulundu",
-      text: `${reason}. ${targets.length > 1 ? "Tümü" : "Hedef"} 3 saniye sonra otomatik açılacak.`,
-      target: targets.length === 1 ? targets[0] : `${targets.length} doğrulanabilir dış bağlantı`,
-      primaryLabel: targets.length > 1 ? "Tümünü şimdi aç" : "Şimdi aç",
+      title: "Hedef bulundu",
+      text: `${reason}. Hedef 3 saniye sonra otomatik açılacak.`,
+      target: targets[0],
+      primaryLabel: "Şimdi aç",
       onPrimary: () => openTargetGroup(targets, { learnBundle }),
       secondaryLabel: "Otomatiği durdur",
       onSecondary: () => {
@@ -302,6 +336,14 @@
   function showDecision(decision) {
     const targets = uniqueSafeTargets(decision?.targets || (decision?.target ? [decision.target] : []));
     if (!targets.length) return;
+    if (targets.length > 1) {
+      showCard({
+        title: `${targets.length} hedef hazır`,
+        text: decision.reason || "Sonuç bağlantıları kullanıma hazır.",
+        tone: "success"
+      });
+      return;
+    }
     if (decision.auto) {
       openTargetGroup(targets);
       return;
@@ -309,8 +351,8 @@
     showCard({
       title: decision.learned ? "Öğrenilmiş hedef bulundu" : "Açık hedef bulundu",
       text: decision.reason || "Yönlendirme adresinden olası hedef çıkarıldı.",
-      target: targets.length === 1 ? targets[0] : `${targets.length} hedef`,
-      primaryLabel: targets.length === 1 ? "Hedefe git" : "Tüm hedefleri aç",
+      target: targets[0],
+      primaryLabel: "Hedefe git",
       onPrimary: () => openTargetGroup(targets),
       secondaryLabel: "Normal devam",
       onSecondary: () => {
@@ -533,6 +575,11 @@
   function attemptFastPass() {
     if (!settings?.enabled || !settings.aggressiveFastPass || currentPage?.gateScore < 35) return;
     currentPage = scanPage();
+    const visibleResults = currentPage.candidates.filter((candidate) => candidate.source === "result-anchor" && candidate.risk?.safe);
+    if (visibleResults.length) {
+      completeVisibleResults(visibleResults);
+      return;
+    }
     removeObviousGateAds();
     if (currentPage.hardVerification) {
       document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
@@ -630,6 +677,9 @@
     if (!response?.ok) return;
     settings = response.settings;
     if (!settings.enabled) return;
+    const finalCandidates = currentPage.candidates.filter((candidate) => candidate.final !== false && candidate.risk?.safe);
+    const visibleResults = finalCandidates.filter((candidate) => candidate.source === "result-anchor");
+    if (await completeVisibleResults(visibleResults)) return;
     if (settings.blockPopupsOnGatePages && currentPage.gateScore >= 35) {
       document.documentElement.setAttribute("data-smart-link-guide-popup-guard", "active");
     } else {
@@ -645,7 +695,6 @@
     } else {
       document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
     }
-    const finalCandidates = currentPage.candidates.filter((candidate) => candidate.final !== false && candidate.risk?.safe);
     const finalTargets = uniqueSafeTargets(finalCandidates.map((candidate) => candidate.url));
     if (response.pendingConfirmation) showConfirmation(response.pendingConfirmation);
     else if (response.decision?.target || response.decision?.targets?.length) {
