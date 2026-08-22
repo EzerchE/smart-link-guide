@@ -1,0 +1,163 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+const listeners = {};
+const storage = {};
+const tabUpdates = [];
+const tabCreates = [];
+
+const chrome = {
+  storage: {
+    local: {
+      async get(defaults) { return { ...defaults, ...storage }; },
+      async set(values) { Object.assign(storage, values); }
+    }
+  },
+  runtime: {
+    onInstalled: { addListener(listener) { listeners.installed = listener; } },
+    onStartup: { addListener(listener) { listeners.startup = listener; } },
+    onMessage: { addListener(listener) { listeners.message = listener; } }
+  },
+  webNavigation: {
+    onCommitted: { addListener(listener) { listeners.committed = listener; } },
+    onCreatedNavigationTarget: { addListener(listener) { listeners.createdTarget = listener; } }
+  },
+  tabs: {
+    onRemoved: { addListener(listener) { listeners.tabRemoved = listener; } },
+    async update(tabId, patch) { tabUpdates.push({ tabId, patch }); },
+    async create(patch) { tabCreates.push(patch); return { id: 100 + tabCreates.length, ...patch }; }
+  }
+};
+
+const context = {
+  chrome,
+  console,
+  URL,
+  URLSearchParams,
+  atob,
+  decodeURIComponent,
+  Date,
+  Map,
+  Set,
+  Promise,
+  globalThis: null,
+  importScripts() {}
+};
+context.globalThis = context;
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "engine.js"), "utf8"), context);
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "background.js"), "utf8"), context);
+
+function send(message, tabId = 8, tabUrl = "https://source.example/") {
+  return new Promise((resolve) => {
+    const keepOpen = listeners.message(message, { tab: { id: tabId, url: tabUrl } }, resolve);
+    assert.equal(keepOpen, true);
+  });
+}
+
+(async () => {
+  await listeners.installed();
+  assert.equal(storage.schemaVersion, 2);
+  assert.equal(storage.settings.enabled, false);
+  assert.equal(storage.settings.blockPopupsOnGatePages, true);
+  assert.equal(storage.settings.aggressiveFastPass, true);
+  assert.equal(storage.settings.autoSubmitSteps, true);
+  await send({ type: "UPDATE_SETTINGS", patch: { enabled: true } });
+
+  const gateway = "https://tpi.li/AbCdEf123";
+  const destination = "https://files.example/download?id=1";
+  assert.equal((await send({ type: "START_JOURNEY", targetUrl: gateway })).ok, true);
+  listeners.committed({ tabId: 8, frameId: 0, url: destination });
+
+  const arrived = await send({
+    type: "PAGE_STATE",
+    page: { url: destination, gateScore: 0, hasCaptcha: false, candidates: [] }
+  }, 8, destination);
+  assert.equal(arrived.ok, true);
+  assert.equal(arrived.pendingConfirmation.from, gateway);
+  assert.equal(arrived.pendingConfirmation.to, destination);
+
+  const confirmed = await send({ type: "CONFIRM_JOURNEY", destinationUrl: destination }, 8, destination);
+  assert.equal(confirmed.ok, true);
+  assert.equal(storage.learnedLinks.length, 1);
+
+  const learned = await send({ type: "GET_DECISION", url: gateway });
+  assert.equal(learned.decision.learned, true);
+  assert.equal(learned.decision.auto, true);
+  assert.equal(learned.decision.target, destination);
+
+  const patternSources = [];
+  for (let index = 2; index <= 3; index += 1) {
+    const parameterGateway = `https://jump.example/go?url=${encodeURIComponent(`https://target.example/file/${index}`)}`;
+    patternSources.push(parameterGateway);
+    const parameterTarget = `https://target.example/file/${index}`;
+    await send({ type: "START_JOURNEY", targetUrl: parameterGateway });
+    listeners.committed({ tabId: 8, frameId: 0, url: parameterTarget });
+    await send({ type: "PAGE_STATE", page: { url: parameterTarget, gateScore: 0 } }, 8, parameterTarget);
+    const result = await send({ type: "CONFIRM_JOURNEY", destinationUrl: parameterTarget }, 8, parameterTarget);
+    assert.equal(result.ok, true);
+  }
+
+  const patternDecision = await send({
+    type: "GET_DECISION",
+    url: `https://jump.example/go?url=${encodeURIComponent("https://target.example/file/new")}`
+  });
+  assert.equal(patternDecision.decision.learned, true);
+  assert.equal(patternDecision.decision.auto, true);
+  assert.equal(patternDecision.decision.target, "https://target.example/file/new");
+
+  await send({ type: "REMOVE_RULE", source: patternSources[0] });
+  const reducedPattern = await send({
+    type: "GET_DECISION",
+    url: `https://jump.example/go?url=${encodeURIComponent("https://target.example/file/another")}`
+  });
+  assert.equal(reducedPattern.decision.learned, false);
+  assert.equal(reducedPattern.decision.auto, false);
+
+  const container = "https://www.keeplinks.org/p16/container-token";
+  const bundleTargets = ["https://host-a.example/file/1", "https://host-b.example/file/2"];
+  const bundleLearned = await send({ type: "LEARN_BUNDLE", sourceUrl: container, targets: bundleTargets });
+  assert.equal(bundleLearned.ok, true);
+  assert.equal(storage.learnedBundles.length, 1);
+  const bundleDecision = await send({ type: "GET_DECISION", url: container });
+  assert.equal(bundleDecision.decision.auto, true);
+  assert.deepEqual([...bundleDecision.decision.targets], bundleTargets);
+
+  const opened = await send({ type: "OPEN_URLS", urls: bundleTargets, learnSource: container });
+  assert.equal(opened.opened, 2);
+  assert.equal(tabCreates.length, 2);
+
+  const filecryptContainer = "https://filecrypt.cc/Container/ABC123.html";
+  const filecryptDestination = "https://files.example/final-package";
+  await send({ type: "START_JOURNEY", targetUrl: filecryptContainer });
+  listeners.committed({ tabId: 8, frameId: 0, url: filecryptDestination });
+  await send({ type: "PAGE_STATE", page: { url: filecryptDestination, gateScore: 0 } }, 8, filecryptDestination);
+  const containerConfirmed = await send({ type: "CONFIRM_JOURNEY", destinationUrl: filecryptDestination }, 8, filecryptDestination);
+  assert.equal(containerConfirmed.ok, true);
+  const filecryptDecision = await send({ type: "GET_DECISION", url: filecryptContainer });
+  assert.deepEqual([...filecryptDecision.decision.targets], [filecryptDestination]);
+
+  const dangerous = await send({
+    type: "OPEN_URL",
+    tabId: 8,
+    url: "https://download.example/payload.exe"
+  });
+  assert.equal(dangerous.ok, false);
+  assert.equal(tabUpdates.length, 0);
+
+  storage.schemaVersion = 1;
+  storage.learnedLinks.push({
+    sourceKey: context.LinkGuideEngine.canonicalKey("https://www.keeplinks.org/p16/old-bad-rule"),
+    source: "https://www.keeplinks.org/p16/old-bad-rule",
+    target: "https://wrong.example/first-only"
+  });
+  await listeners.startup();
+  assert.equal(storage.schemaVersion, 2);
+  assert.equal(storage.learnedLinks.some((item) => /old-bad-rule/.test(item.source)), false);
+
+  process.stdout.write("background tests passed\n");
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

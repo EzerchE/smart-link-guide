@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Akıllı Link Rehberi",
+  "short_name": "Link Rehberi",
+  "version": "0.3.1",
+  "description": "Sayaçlı geçişleri hızlandırır; tek ve çoklu hedefleri üç saniyede açıp yerel olarak öğrenir.",
+  "minimum_chrome_version": "102",
+  "permissions": [
+    "storage",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Akıllı Link Rehberi",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "guard-main.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "engine.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Syntax and tests
+        shell: pwsh
+        run: |
+          Get-ChildItem -Filter *.js | ForEach-Object { node --check $_.FullName }
+          Get-ChildItem tests -Filter *.test.cjs | ForEach-Object { node $_.FullName }
+      - name: Sensitive data audit
+        shell: pwsh
+        run: ./scripts/repository-audit.ps1

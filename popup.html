@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Akıllı Link Rehberi</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="mark" aria-hidden="true">↗</div>
+        <div class="heading">
+          <h1>Akıllı Link Rehberi</h1>
+          <p>Yerel ve doğrulanabilir öğrenme · <span id="version">v…</span></p>
+        </div>
+        <label class="switch" title="Eklentiyi aç veya kapat">
+          <input id="enabled" type="checkbox">
+          <span></span>
+        </label>
+      </header>
+
+      <section id="status" class="status">
+        <strong id="statusTitle">Hazırlanıyor…</strong>
+        <p id="statusText">Açık sekme inceleniyor.</p>
+      </section>
+
+      <p class="privacy-disclosure">Etkinleştirildiğinde açık sayfanın URL’si, görünür geçiş metinleri ve bağlantı zinciri yalnız cihazınızda analiz edilip saklanır; geliştiriciye gönderilmez.</p>
+
+      <section class="panel current">
+        <span class="eyebrow">AÇIK SEKME</span>
+        <strong id="currentHost">—</strong>
+        <p id="currentDetail">Henüz bir geçiş işareti bulunmadı.</p>
+        <code id="candidate" hidden></code>
+        <div class="actions">
+          <button id="openTarget" class="primary" type="button" hidden>Hedefe git</button>
+          <button id="watchJourney" type="button">Bu geçişi izle</button>
+          <button id="confirmJourney" class="primary" type="button" hidden>Doğru hedef, öğren</button>
+        </div>
+      </section>
+
+      <section class="panel settings">
+        <label>
+          <span><strong>Agresif FastPass</strong><small>Sayaçları hızlandırır ve kilitli geçiş kontrollerini açar.</small></span>
+          <input id="aggressiveFastPass" type="checkbox">
+        </label>
+        <label>
+          <span><strong>Devam adımlarını otomatik çalıştır</strong><small>I'm Human, Continue, Get Link ve benzeri güvenli adımlar.</small></span>
+          <input id="autoSubmitSteps" type="checkbox">
+        </label>
+        <label>
+          <span><strong>Geçiş reklamlarını gizle</strong><small>Belirgin reklam kutuları ve şeffaf tıklama katmanları.</small></span>
+          <input id="hideGateAds" type="checkbox">
+        </label>
+        <label>
+          <span><strong>Sayfa yardımcısı</strong><small>Hedef ve doğrulama kartlarını sayfada gösterir.</small></span>
+          <input id="showAssistant" type="checkbox">
+        </label>
+        <label>
+          <span><strong>Doğrulanan tam linkleri otomatik aç</strong><small>30 gün içinde doğrulanmış aynı bağlantılar.</small></span>
+          <input id="autoOpenLearned" type="checkbox">
+        </label>
+        <label>
+          <span><strong>Öğrenilmiş URL kalıplarını uygula</strong><small>Aynı parametre iki kez doğrulandıktan sonra genellenir.</small></span>
+          <input id="autoOpenPatterns" type="checkbox">
+        </label>
+        <label>
+          <span><strong>Geçiş sayfası popup koruması</strong><small>Yalnız yüksek olasılıklı geçiş sayfalarında script popup'larını bastırır.</small></span>
+          <input id="blockPopups" type="checkbox">
+        </label>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          <div>
+            <span class="eyebrow">YEREL HAFIZA</span>
+            <h2>Öğrenilen geçişler</h2>
+          </div>
+          <span id="ruleCount" class="count">0</span>
+        </div>
+        <div id="rules" class="rules"></div>
+        <button id="clearRules" class="danger-link" type="button">Öğrenilenleri temizle</button>
+      </section>
+
+      <div id="notice" class="notice" hidden></div>
+
+      <footer>
+        Gerçek CAPTCHA, parola ve ödeme doğrulaması kullanıcı tarafından tamamlanır; biter bitmez FastPass otomatik devam eder.
+      </footer>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
