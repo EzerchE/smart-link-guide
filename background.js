@@ -1,7 +1,7 @@
 importScripts("engine.js");
 
 const Engine = globalThis.LinkGuideEngine;
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const MAX_LEARNED_LINKS = 250;
 const MAX_LEARNED_BUNDLES = 100;
 const MAX_JOURNEY_AGE_MS = 5 * 60 * 1000;
@@ -19,7 +19,7 @@ const DEFAULT_STORE = Object.freeze({
     aggressiveFastPass: true,
     autoSubmitSteps: true,
     hideGateAds: true,
-    dismissAntiAdblockOverlays: false
+    dismissAntiAdblockOverlays: true
   },
   learnedLinks: [],
   learnedBundles: [],
@@ -41,6 +41,7 @@ async function getStore() {
   const saved = await chrome.storage.local.get(DEFAULT_STORE);
   const savedVersion = Number(saved.schemaVersion || 0);
   const legacyUnsafeLearning = savedVersion > 0 && savedVersion < 3;
+  const needsAntiAdblockCompatibility = savedVersion > 0 && savedVersion < 4;
   const savedLinks = Array.isArray(saved.learnedLinks) ? saved.learnedLinks : [];
   const learnedLinks = legacyUnsafeLearning
     ? []
@@ -48,7 +49,7 @@ async function getStore() {
     ? savedLinks.filter((item) => !Engine.isContainerPage(item.source))
     : savedLinks;
   const settings = mergeSettings(saved.settings);
-  if (legacyUnsafeLearning) settings.dismissAntiAdblockOverlays = false;
+  if (needsAntiAdblockCompatibility) settings.dismissAntiAdblockOverlays = true;
   return {
     ...DEFAULT_STORE,
     ...saved,

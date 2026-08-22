@@ -60,12 +60,12 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
 
 (async () => {
   await listeners.installed();
-  assert.equal(storage.schemaVersion, 3);
+  assert.equal(storage.schemaVersion, 4);
   assert.equal(storage.settings.enabled, false);
   assert.equal(storage.settings.blockPopupsOnGatePages, true);
   assert.equal(storage.settings.aggressiveFastPass, true);
   assert.equal(storage.settings.autoSubmitSteps, true);
-  assert.equal(storage.settings.dismissAntiAdblockOverlays, false);
+  assert.equal(storage.settings.dismissAntiAdblockOverlays, true);
   await send({ type: "UPDATE_SETTINGS", patch: { enabled: true } });
 
   const signedGateway = `https://jump.example/goto/${"A".repeat(40)}/token`;
@@ -274,7 +274,8 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
     target: "https://wrong.example/first-only"
   });
   await listeners.startup();
-  assert.equal(storage.schemaVersion, 3);
+  assert.equal(storage.schemaVersion, 4);
+  assert.equal(storage.settings.dismissAntiAdblockOverlays, true);
   assert.equal(storage.learnedLinks.some((item) => /old-bad-rule/.test(item.source)), false);
   assert.equal(storage.learnedBundles.length, 0);
 

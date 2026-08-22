@@ -560,7 +560,15 @@
     ];
     for (const element of [...document.querySelectorAll(selectors.join(","))].slice(0, 80)) {
       if (element.closest('[class*="captcha" i], [id*="captcha" i]')) continue;
-      element.style.setProperty("display", "none", "important");
+      element.style.setProperty("display", "block", "important");
+      element.style.setProperty("opacity", "0", "important");
+      element.style.setProperty("pointer-events", "none", "important");
+      element.style.setProperty("overflow", "hidden", "important");
+      element.style.setProperty("width", "1px", "important");
+      element.style.setProperty("height", "1px", "important");
+      element.style.setProperty("min-width", "1px", "important");
+      element.style.setProperty("min-height", "1px", "important");
+      element.setAttribute("aria-hidden", "true");
     }
 
     for (const element of [...document.querySelectorAll("body *")].slice(0, 500)) {
@@ -603,6 +611,13 @@
     }
 
     if (removed && document.body) {
+      for (const backdrop of document.querySelectorAll([
+        ".modal-backdrop", ".overlay-backdrop", '[class*="modal-backdrop" i]', '[class*="overlay-backdrop" i]'
+      ].join(","))) {
+        backdrop.style.setProperty("display", "none", "important");
+        backdrop.setAttribute("aria-hidden", "true");
+      }
+      document.body.classList.remove("modal-open", "no-scroll", "overflow-hidden");
       document.body.style.setProperty("overflow", "auto", "important");
       document.documentElement.style.setProperty("overflow", "auto", "important");
     }
@@ -920,8 +935,8 @@
     }
     else if (currentPage.hasAntiAdblock && !currentPage.hasGateAction && !currentPage.hardVerification) {
       showCard({
-        title: "Reklam engeli geçişi durdurdu",
-        text: "Bu geçitte gerekli betik reklam engelleyici tarafından durduruluyor. Bu sekme için engellemeyi geçici kapatın; açılır pencere koruması etkin kalır.",
+        title: "Site reklam kontrolü bekliyor",
+        text: "Uyumluluk katmanı reklam alanını görünmez bir yer tutucu olarak koruyup engelleyici uyarısını kaldırmayı deniyor. Reklam engelleyicinizi kapatmanız gerekmez.",
         tone: "info"
       });
     }
