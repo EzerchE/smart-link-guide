@@ -175,6 +175,9 @@
     if (detectsAntiAdblockMessage(text)) {
       return { eligible: false, score: 0, reason: "Reklam engeli kilidi" };
     }
+    if (/continue\s+(?:shopping|reading|watching|to\s+(?:cart|basket|checkout))|alışverişe\s+devam|okumaya\s+devam|izlemeye\s+devam|sepete\s+ekle|hemen\s+al|ödeme(?:ye)?\s+geç/.test(text)) {
+      return { eligible: false, score: 0, reason: "Normal site eylemi" };
+    }
     if (/login|log\s*in|sign\s*in|sign\s*up|register|subscribe|purchase|buy\s*now|payment|pay\s*now|install|notification|bildirim|satın\s*al|kayıt\s*ol|giriş\s*yap/.test(text)) {
       return { eligible: false, score: 0, reason: "Hassas veya kapsam dışı eylem" };
     }

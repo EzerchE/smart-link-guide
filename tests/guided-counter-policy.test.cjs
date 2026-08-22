@@ -16,5 +16,8 @@ assert.match(content, /\[onclick\]/);
 assert.match(content, /Doğru geçiş düğmesi/);
 assert.match(content, /data-smart-link-guide-recommended/);
 assert.match(content, /data-smart-link-guide-local-counter/);
+assert.match(content, /gateActionScore\s*>=\s*96/);
+assert.match(content, /tokenLikePath\s*&&\s*markerCount\s*>=\s*2/);
+assert.match(content, /forms\s*&&\s*markerCount/);
 
 process.stdout.write("guided counter policy tests passed\n");

@@ -231,13 +231,16 @@
       const actionPath = new URL(actionUrl).pathname;
       return form.id === "go-link" || /\/(?:links?\/go|go-link|counter\/submit)(?:\/|$)/i.test(actionPath);
     });
-    const hasGateAction = [...document.querySelectorAll([
+    const gateActionScore = [...document.querySelectorAll([
       "button", 'input[type="submit"]', 'input[type="button"]', "a[href]", '[role="button"]',
       '[onclick]', '[data-action]', '[data-step]', '[tabindex]:not([tabindex="-1"])', 'img[alt]', 'img[title]',
       '[class*="click" i]', '[class*="button" i]', '[id*="click" i]'
-    ].join(","))].slice(0, 350).some((element) =>
-      isVisible(element) && Engine.classifyActionText(elementLabel(element)).eligible
-    );
+    ].join(","))].slice(0, 350).reduce((highest, element) => {
+      if (!isVisible(element)) return highest;
+      const classification = Engine.classifyActionText(elementLabel(element));
+      return classification.eligible ? Math.max(highest, classification.score) : highest;
+    }, 0);
+    const hasGateAction = gateActionScore >= 96;
     const lastPathPart = location.pathname.split("/").filter(Boolean).at(-1) || "";
     const tokenLikePath = /^[A-Za-z0-9_-]{6,32}(?:\.html)?$/.test(lastPathPart);
     const semanticGatePath = /\/(?:go|out|redirect|link|container|protected|p\d+)(?:\/|$)/i.test(location.pathname);
@@ -245,8 +248,8 @@
       Math.min(24, markerCount * 8) +
       (hasLocalCountdown ? 22 : 0) +
       (hasCaptcha ? 25 : 0) +
-      (forms ? 6 : 0) +
-      (tokenLikePath ? 8 : 0) +
+      (forms && markerCount ? 6 : 0) +
+      (tokenLikePath && markerCount >= 2 ? 8 : 0) +
       (semanticGatePath ? 18 : 0);
     if (likelyLogin && !urlAnalysis.candidates.length) gateScore = Math.min(gateScore, 20);
 
@@ -298,6 +301,7 @@
       hasCaptcha,
       hardVerification,
       hasGateAction,
+      gateActionScore,
       hasLocalCountdown,
       serverTimingRequired,
       hasAntiAdblock,
@@ -816,6 +820,8 @@
     ));
     if (!activeGate) {
       document.documentElement.removeAttribute("data-smart-link-guide-local-counter");
+      document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
+      clearActionGuide();
       return;
     }
     if (currentPage.hasLocalCountdown && !naturalTimingMode && !currentPage.hardVerification) {

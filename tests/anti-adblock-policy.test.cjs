@@ -21,5 +21,7 @@ assert.match(guard, /data-smart-link-guide-resource-blocked/);
 assert.match(guard, /installAdGeometryShim/);
 assert.match(guard, /"offsetHeight",\s*"height",\s*90/);
 assert.match(guard, /"clientWidth",\s*"width",\s*300/);
+assert.match(guard, /gateSurfaceActive\(\)\s*&&\s*measured\s*<\s*25/);
+assert.match(guard, /transitionCallback\(callback\)\s*\|\|\s*gateSurfaceActive\(\)/);
 
 process.stdout.write("anti-adblock policy tests passed\n");

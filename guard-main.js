@@ -37,7 +37,7 @@
       get() {
         const measured = descriptor.get.call(this);
         try {
-          if (measured < 25 && this.matches?.(AD_GEOMETRY_SELECTOR)) {
+          if (gateSurfaceActive() && measured < 25 && this.matches?.(AD_GEOMETRY_SELECTOR)) {
             return declaredAdDimension(this, axis, fallback);
           }
         } catch {}
@@ -75,6 +75,21 @@
 
   function localCounterActive() {
     return document.documentElement?.getAttribute("data-smart-link-guide-local-counter") === "active";
+  }
+
+  function gateSurfaceActive() {
+    const root = document.documentElement;
+    const activeAttribute = [
+      "data-smart-link-guide-popup-guard",
+      "data-smart-link-guide-aggressive",
+      "data-smart-link-guide-natural-timing",
+      "data-smart-link-guide-local-counter"
+    ].some((name) => root?.getAttribute(name) === "active");
+    if (activeAttribute) return true;
+    const bodyClass = String(document.body?.className || "");
+    const path = String(globalThis.location?.pathname || "");
+    return /(?:^|\s)(?:banner|interstitial)[-_]page(?:\s|$)|shortlink|adlink/i.test(bodyClass) ||
+      /\/(?:go|goto|out|redirect|links?\/go)(?:\/|$)/i.test(path);
   }
 
   function transitionCallback(callback) {
@@ -127,7 +142,9 @@
     const originalDelay = Number(delay) || 0;
     const currentDelay = acceleratedDelay(callback, originalDelay, true);
     const logicalId = nativeSetInterval(callback, currentDelay, ...args);
-    managedIntervals.set(logicalId, { callback, originalDelay, args, currentDelay, currentId: logicalId });
+    if (transitionCallback(callback) || gateSurfaceActive()) {
+      managedIntervals.set(logicalId, { callback, originalDelay, args, currentDelay, currentId: logicalId });
+    }
     return logicalId;
   };
 
