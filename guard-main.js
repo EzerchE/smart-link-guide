@@ -9,8 +9,9 @@
   const nativeClearInterval = window.clearInterval.bind(window);
   const managedIntervals = new Map();
   const AD_GEOMETRY_SELECTOR = [
-    ".adsbox", ".ad-banner", ".banner-inner", ".banner-captcha",
+    ".adsbox", ".ad-banner", ".banner-inner", ".ad-element", ".clever-core-ads-offerwall",
     'ins[data-sizes-desktop]', 'ins[data-sizes-mobile]', '[data-ad-slot]', '[data-ad-client]',
+    'ins[class^="adv-" i]',
     '[id^="ad_" i]', '[id^="ads_" i]', '[id^="advert" i]',
     '[class~="ad-container" i]', '[class~="advertisement" i]'
   ].join(",");
@@ -21,6 +22,36 @@
   let accelerator = null;
   let acceleratorStopsAt = 0;
   let captchaResetAttempts = 0;
+
+  function likelyMonetizedGateUrl() {
+    const href = String(globalThis.location?.href || "");
+    const path = String(globalThis.location?.pathname || "");
+    const lastPart = path.split("/").filter(Boolean).at(-1) || "";
+    return /(?:[?&])src=[^&#]+/i.test(href) && /^[A-Za-z0-9_-]{5,32}$/.test(lastPart);
+  }
+
+  function installSignedAntiAdblockCompatibility() {
+    if (!likelyMonetizedGateUrl() || Object.getOwnPropertyDescriptor(window, "app_vars")) return;
+    let capturedValue;
+    Object.defineProperty(window, "app_vars", {
+      configurable: true,
+      enumerable: true,
+      get() { return capturedValue; },
+      set(nextValue) {
+        if (nextValue && typeof nextValue === "object" &&
+          Object.hasOwn(nextValue, "force_disable_adblock") &&
+          Object.hasOwn(nextValue, "adblock_allowed") &&
+          Object.hasOwn(nextValue, "please_disable_adblock")) {
+          nextValue.force_disable_adblock = "0";
+          nextValue.adblock_allowed = true;
+          document.documentElement?.setAttribute("data-smart-link-guide-adblock-compatible", "active");
+        }
+        capturedValue = nextValue;
+      }
+    });
+  }
+
+  installSignedAntiAdblockCompatibility();
 
   function markCaptchaFailure(reason) {
     const message = String(reason?.message || reason || "");

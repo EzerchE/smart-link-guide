@@ -26,5 +26,11 @@ assert.match(guard, /transitionCallback\(callback\)\s*\|\|\s*gateSurfaceActive\(
 assert.match(guard, /function markCaptchaFailure/);
 assert.match(guard, /"unhandledrejection"/);
 assert.match(guard, /grecaptcha\?\.reset/);
+assert.match(guard, /installSignedAntiAdblockCompatibility/);
+assert.match(guard, /Object\.hasOwn\(nextValue,\s*"force_disable_adblock"\)/);
+assert.match(guard, /nextValue\.adblock_allowed\s*=\s*true/);
+assert.match(guard, /ins\[class\^=\\?"adv-/);
+assert.match(adHider, /\.ad-element/);
+assert.match(adHider, /\.clever-core-ads-offerwall/);
 
 process.stdout.write("anti-adblock policy tests passed\n");

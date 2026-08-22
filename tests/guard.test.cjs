@@ -47,9 +47,19 @@ vm.runInNewContext(
   fs.readFileSync(path.join(__dirname, "..", "guard-main.js"), "utf8"),
   {
     window, document, HTMLFormElement, CustomEvent: class CustomEvent {}, MutationObserver, Date, Number, Function,
-    grecaptcha: { reset() { captchaResets += 1; } }
+    grecaptcha: { reset() { captchaResets += 1; } },
+    location: { href: "https://gate.example/AbC123?src=PSA", pathname: "/AbC123" }
   }
 );
+
+window.app_vars = {
+  force_disable_adblock: "1",
+  adblock_allowed: false,
+  please_disable_adblock: "Please disable Adblock"
+};
+assert.equal(window.app_vars.force_disable_adblock, "0");
+assert.equal(window.app_vars.adblock_allowed, true);
+assert.equal(attributes.get("data-smart-link-guide-adblock-compatible"), "active");
 
 assert.ok(window.open("https://normal.example"));
 assert.equal(originalOpenCalls, 1);

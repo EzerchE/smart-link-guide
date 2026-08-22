@@ -634,6 +634,7 @@
       "ins.adsbygoogle", 'iframe[src*="doubleclick" i]', 'iframe[src*="googlesyndication" i]',
       '[id^="ad_" i]', '[id^="ads_" i]', '[id^="advert" i]',
       '[class~="advertisement" i]', '[class~="ad-container" i]', '[class~="adsbox" i]',
+      '.ad-element', '.clever-core-ads-offerwall', 'ins[class^="adv-" i]',
       '[data-ad-slot]', '[data-ad-client]'
     ];
     for (const element of [...document.querySelectorAll(selectors.join(","))].slice(0, 80)) {
@@ -1069,7 +1070,7 @@
           ? "Geçiş bileşeni ağ filtresinde engellendi"
           : "Site reklam kontrolü bekliyor",
         text: currentPage.hasBlockedResource
-          ? "Sayfanın geçiş betiği reklam engelleyici veya ağ filtresi tarafından yüklenmedi. Chrome, başka bir eklentinin engellemesini bu eklentinin geçersiz kılmasına izin vermez. Bu adresi filtre istisnasına aldıktan sonra yenileyin; açılır pencere ve reklam görünümü koruması etkin kalır."
+          ? "Reklam ağı kaynağı yerel veya ağ düzeyindeki bir filtre nedeniyle yüklenmedi. Eklenti güvenli yer tutucuyla geçişi sürdürmeyi deniyor; reklam filtresini kapatmanız gerekmez."
           : "Uyumluluk katmanı reklam alanını görünmez bir yer tutucu olarak koruyor. Geçiş düğmesi hazır olduğunda otomatik işlem devam edecek.",
         tone: currentPage.hasBlockedResource ? "danger" : "info"
       });
