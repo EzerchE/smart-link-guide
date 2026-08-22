@@ -30,7 +30,13 @@
     event.stopImmediatePropagation();
     const href = safeHttpUrl(anchor.href);
     const label = `${anchor.textContent || ""} ${anchor.getAttribute("aria-label") || ""} ${anchor.title || ""}`;
-    if (href && TRANSITION_TEXT.test(label)) location.assign(href);
+    if (href && TRANSITION_TEXT.test(label)) {
+      Promise.resolve(chrome.runtime.sendMessage({
+        type: "START_JOURNEY",
+        sourceUrl: location.href,
+        targetUrl: href
+      })).then(() => location.assign(href)).catch(() => location.assign(href));
+    }
   }
 
   window.addEventListener("click", blockOrRetargetClick, true);

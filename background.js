@@ -1,10 +1,10 @@
 importScripts("engine.js");
 
 const Engine = globalThis.LinkGuideEngine;
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const MAX_LEARNED_LINKS = 250;
 const MAX_LEARNED_BUNDLES = 100;
-const MAX_JOURNEY_AGE_MS = 10 * 60 * 1000;
+const MAX_JOURNEY_AGE_MS = 5 * 60 * 1000;
 const AUTO_RULE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_REPEAT_VISITS = 3;
 
@@ -19,7 +19,7 @@ const DEFAULT_STORE = Object.freeze({
     aggressiveFastPass: true,
     autoSubmitSteps: true,
     hideGateAds: true,
-    dismissAntiAdblockOverlays: true
+    dismissAntiAdblockOverlays: false
   },
   learnedLinks: [],
   learnedBundles: [],
@@ -39,18 +39,24 @@ function mergeSettings(saved) {
 
 async function getStore() {
   const saved = await chrome.storage.local.get(DEFAULT_STORE);
+  const savedVersion = Number(saved.schemaVersion || 0);
+  const legacyUnsafeLearning = savedVersion > 0 && savedVersion < 3;
   const savedLinks = Array.isArray(saved.learnedLinks) ? saved.learnedLinks : [];
-  const learnedLinks = Number(saved.schemaVersion || 0) < 2
+  const learnedLinks = legacyUnsafeLearning
+    ? []
+    : savedVersion < 2
     ? savedLinks.filter((item) => !Engine.isContainerPage(item.source))
     : savedLinks;
+  const settings = mergeSettings(saved.settings);
+  if (legacyUnsafeLearning) settings.dismissAntiAdblockOverlays = false;
   return {
     ...DEFAULT_STORE,
     ...saved,
     schemaVersion: SCHEMA_VERSION,
-    settings: mergeSettings(saved.settings),
+    settings,
     learnedLinks,
-    learnedBundles: Array.isArray(saved.learnedBundles) ? saved.learnedBundles : [],
-    profiles: Array.isArray(saved.profiles) ? saved.profiles : [],
+    learnedBundles: legacyUnsafeLearning ? [] : (Array.isArray(saved.learnedBundles) ? saved.learnedBundles : []),
+    profiles: legacyUnsafeLearning ? [] : (Array.isArray(saved.profiles) ? saved.profiles : []),
     stats: { ...DEFAULT_STORE.stats, ...(saved.stats || {}) }
   };
 }
@@ -67,7 +73,7 @@ function cleanupJourneys() {
   }
 }
 
-function startJourney(tabId, targetUrl, sourceUrl = null) {
+function startJourney(tabId, targetUrl, sourceUrl = null, options = {}) {
   const normalized = Engine.normalizeUrl(targetUrl);
   if (!Number.isInteger(tabId) || !normalized) return null;
   const normalizedSource = Engine.normalizeUrl(sourceUrl);
@@ -79,7 +85,10 @@ function startJourney(tabId, targetUrl, sourceUrl = null) {
   ));
   if (continuesExisting) {
     existing.naturalTiming = Boolean(existing.naturalTiming || Engine.requiresNaturalTiming(normalized));
-    return updateJourney(tabId, normalized);
+    existing.expectedUrl = normalized;
+    existing.manualConfirmation = Boolean(existing.manualConfirmation || options.manualConfirmation);
+    existing.updatedAt = Date.now();
+    return existing;
   }
   const now = Date.now();
   const journey = {
@@ -88,6 +97,7 @@ function startJourney(tabId, targetUrl, sourceUrl = null) {
     startUrl: normalized,
     startHost: new URL(normalized).hostname,
     currentUrl: normalized,
+    expectedUrl: normalized,
     chain: [normalized],
     naturalTiming: Engine.requiresNaturalTiming(normalized),
     recoveryAttempts: 0,
@@ -95,6 +105,8 @@ function startJourney(tabId, targetUrl, sourceUrl = null) {
     visitCounts: {},
     loopDetected: false,
     blockedPopups: 0,
+    manualConfirmation: Boolean(options.manualConfirmation),
+    lastNavigationAt: now,
     startedAt: now,
     updatedAt: now
   };
@@ -265,8 +277,11 @@ function pageBlocksConfirmation(page) {
 }
 
 function confirmationFor(tabId, currentUrl, page = null) {
-  const journey = updateJourney(tabId, currentUrl);
-  if (!journey) return null;
+  const journey = journeys.get(tabId);
+  const normalized = Engine.normalizeUrl(currentUrl);
+  if (!journey || !normalized || !journey.manualConfirmation || journey.loopDetected) return null;
+  if (Engine.canonicalKey(normalized) !== Engine.canonicalKey(journey.currentUrl)) return null;
+  if (Date.now() - Number(journey.lastNavigationAt || journey.startedAt) > MAX_JOURNEY_AGE_MS) return null;
   const current = new URL(journey.currentUrl);
   if (current.hostname === journey.startHost || Engine.canonicalKey(journey.currentUrl) === Engine.canonicalKey(journey.startUrl)) return null;
   if (pageBlocksConfirmation(page)) return null;
@@ -280,7 +295,7 @@ function confirmationFor(tabId, currentUrl, page = null) {
 async function confirmJourney(tabId, destinationUrl) {
   const journey = journeys.get(tabId);
   const destination = Engine.normalizeUrl(destinationUrl);
-  if (!journey || !destination || Engine.canonicalKey(destination) !== Engine.canonicalKey(journey.currentUrl)) {
+  if (!journey || !journey.manualConfirmation || !destination || Engine.canonicalKey(destination) !== Engine.canonicalKey(journey.currentUrl)) {
     throw new Error("Doğrulanabilecek etkin bir geçiş bulunamadı.");
   }
   const page = tabStates.get(tabId) || null;
@@ -374,7 +389,30 @@ chrome.runtime.onStartup.addListener(() => initialize().catch(console.error));
 chrome.webNavigation.onCommitted.addListener((details) => {
   if (details.frameId !== 0) return;
   cleanupJourneys();
-  updateJourney(details.tabId, details.url);
+  const journey = journeys.get(details.tabId);
+  if (journey) {
+    const normalized = Engine.normalizeUrl(details.url);
+    const nextKey = Engine.canonicalKey(normalized);
+    const currentKey = Engine.canonicalKey(journey.currentUrl);
+    const expectedKey = Engine.canonicalKey(journey.expectedUrl);
+    const qualifiers = new Set(details.transitionQualifiers || []);
+    const redirected = qualifiers.has("client_redirect") || qualifiers.has("server_redirect");
+    const priorPage = tabStates.get(details.tabId) || null;
+    const formOutsideGate = details.transitionType === "form_submit" &&
+      Number(priorPage?.gateScore || 0) < 15 && !priorPage?.hardVerification && !priorPage?.hasGateAction;
+    const ordinaryUserNavigation = (
+      ["typed", "auto_bookmark", "link"].includes(details.transitionType) || formOutsideGate
+    ) && !redirected;
+    if (ordinaryUserNavigation && nextKey && nextKey !== currentKey && nextKey !== expectedKey) {
+      journeys.delete(details.tabId);
+    } else {
+      const updated = updateJourney(details.tabId, normalized);
+      if (updated) {
+        updated.expectedUrl = null;
+        updated.lastNavigationAt = Date.now();
+      }
+    }
+  }
   tabStates.delete(details.tabId);
 });
 
@@ -426,10 +464,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           updatedAt: Date.now()
         };
         tabStates.set(senderTabId, page);
-        if (!journeys.has(senderTabId) && page.url && (
-          page.gateScore >= 45 || Engine.requiresNaturalTiming(page.url)
-        )) startJourney(senderTabId, page.url);
-        const journey = journeys.get(senderTabId) || null;
+        if (!journeys.has(senderTabId) && page.url && Engine.requiresNaturalTiming(page.url)) {
+          startJourney(senderTabId, page.url);
+        }
+        let journey = journeys.get(senderTabId) || null;
+        const automaticJourneyFinished = Boolean(
+          journey && !journey.manualConfirmation && journey.chain.length >= 2 &&
+          page.gateScore < 15 && !page.hardVerification && !page.hasGateAction &&
+          !page.hasAntiAdblock && !page.gateError && !Engine.requiresNaturalTiming(page.url)
+        );
+        if (automaticJourneyFinished) {
+          journeys.delete(senderTabId);
+          journey = null;
+        }
         let recoveryUrl = null;
         if (page.gateError && journey) {
           journey.naturalTiming = true;
@@ -472,7 +519,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       case "START_JOURNEY": {
         const tabId = Number.isInteger(message.tabId) ? message.tabId : senderTabId;
-        return { ok: Boolean(startJourney(tabId, message.targetUrl, message.sourceUrl)) };
+        return {
+          ok: Boolean(startJourney(tabId, message.targetUrl, message.sourceUrl, {
+            manualConfirmation: Boolean(message.manualConfirmation)
+          }))
+        };
       }
       case "CONFIRM_JOURNEY": {
         const tabId = Number.isInteger(message.tabId) ? message.tabId : senderTabId;

@@ -71,6 +71,8 @@ vm.runInNewContext(
     preventDefault() {},
     stopImmediatePropagation() {}
   });
+  await Promise.resolve();
+  await Promise.resolve();
   assert.deepEqual(navigations, ["https://next.example/step"]);
 
   const form = Object.assign(new HTMLFormElement(), { target: "_blank" });

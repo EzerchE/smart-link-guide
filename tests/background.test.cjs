@@ -60,12 +60,12 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
 
 (async () => {
   await listeners.installed();
-  assert.equal(storage.schemaVersion, 2);
+  assert.equal(storage.schemaVersion, 3);
   assert.equal(storage.settings.enabled, false);
   assert.equal(storage.settings.blockPopupsOnGatePages, true);
   assert.equal(storage.settings.aggressiveFastPass, true);
   assert.equal(storage.settings.autoSubmitSteps, true);
-  assert.equal(storage.settings.dismissAntiAdblockOverlays, true);
+  assert.equal(storage.settings.dismissAntiAdblockOverlays, false);
   await send({ type: "UPDATE_SETTINGS", patch: { enabled: true } });
 
   const signedGateway = `https://jump.example/goto/${"A".repeat(40)}/token`;
@@ -114,11 +114,48 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
   assert.equal(loopState.loopDetected, true);
   assert.equal((await send({ type: "RESET_LOOP" }, 8, timedIntermediate)).ok, true);
 
+  const automaticGateway = "https://short.example/automatic";
+  const automaticDestination = "https://ordinary.example/article";
+  await send({ type: "START_JOURNEY", targetUrl: automaticGateway }, 9, automaticGateway);
+  listeners.committed({
+    tabId: 9,
+    frameId: 0,
+    url: automaticDestination,
+    transitionType: "link",
+    transitionQualifiers: ["server_redirect"]
+  });
+  const automaticArrival = await send({
+    type: "PAGE_STATE",
+    page: { url: automaticDestination, gateScore: 0, candidates: [] }
+  }, 9, automaticDestination);
+  assert.equal(automaticArrival.journeyActive, false);
+  assert.equal(automaticArrival.pendingConfirmation, null);
+
+  const unrelatedPage = "https://ordinary.example/another-page";
+  listeners.committed({
+    tabId: 9,
+    frameId: 0,
+    url: unrelatedPage,
+    transitionType: "link",
+    transitionQualifiers: []
+  });
+  const unrelatedState = await send({
+    type: "PAGE_STATE",
+    page: { url: unrelatedPage, gateScore: 0, candidates: [] }
+  }, 9, unrelatedPage);
+  assert.equal(unrelatedState.journeyActive, false);
+  assert.equal(unrelatedState.pendingConfirmation, null);
+  assert.equal((await send({ type: "GET_GUARD_STATE" }, 9, unrelatedPage)).active, false);
+
   const gateway = "https://tpi.li/AbCdEf123";
   const antiAdblockIntermediate = "https://intermediate.example/article";
   const continueIntermediate = "https://second-step.example/continue";
   const destination = "https://files.example/download?id=1";
-  assert.equal((await send({ type: "START_JOURNEY", targetUrl: gateway })).ok, true);
+  assert.equal((await send({
+    type: "START_JOURNEY",
+    targetUrl: gateway,
+    manualConfirmation: true
+  })).ok, true);
   listeners.committed({ tabId: 8, frameId: 0, url: antiAdblockIntermediate });
 
   const blockedByOverlay = await send({
@@ -175,7 +212,7 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
     const parameterGateway = `https://jump.example/go?url=${encodeURIComponent(`https://target.example/file/${index}`)}`;
     patternSources.push(parameterGateway);
     const parameterTarget = `https://target.example/file/${index}`;
-    await send({ type: "START_JOURNEY", targetUrl: parameterGateway });
+    await send({ type: "START_JOURNEY", targetUrl: parameterGateway, manualConfirmation: true });
     listeners.committed({ tabId: 8, frameId: 0, url: parameterTarget });
     await send({ type: "PAGE_STATE", page: { url: parameterTarget, gateScore: 0 } }, 8, parameterTarget);
     const result = await send({ type: "CONFIRM_JOURNEY", destinationUrl: parameterTarget }, 8, parameterTarget);
@@ -213,7 +250,7 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
 
   const filecryptContainer = "https://filecrypt.cc/Container/ABC123.html";
   const filecryptDestination = "https://files.example/final-package";
-  await send({ type: "START_JOURNEY", targetUrl: filecryptContainer });
+  await send({ type: "START_JOURNEY", targetUrl: filecryptContainer, manualConfirmation: true });
   listeners.committed({ tabId: 8, frameId: 0, url: filecryptDestination });
   await send({ type: "PAGE_STATE", page: { url: filecryptDestination, gateScore: 0 } }, 8, filecryptDestination);
   const containerConfirmed = await send({ type: "CONFIRM_JOURNEY", destinationUrl: filecryptDestination }, 8, filecryptDestination);
@@ -237,8 +274,9 @@ function send(message, tabId = 8, tabUrl = "https://source.example/") {
     target: "https://wrong.example/first-only"
   });
   await listeners.startup();
-  assert.equal(storage.schemaVersion, 2);
+  assert.equal(storage.schemaVersion, 3);
   assert.equal(storage.learnedLinks.some((item) => /old-bad-rule/.test(item.source)), false);
+  assert.equal(storage.learnedBundles.length, 0);
 
   process.stdout.write("background tests passed\n");
 })().catch((error) => {

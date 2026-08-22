@@ -397,7 +397,7 @@
 
     if (targets.length === 1) {
       if (learnBundle) await send({ type: "LEARN_BUNDLE", sourceUrl: location.href, targets });
-      send({ type: "START_JOURNEY", sourceUrl: location.href, targetUrl: location.href });
+      await send({ type: "START_JOURNEY", sourceUrl: location.href, targetUrl: targets[0] });
       safeNavigate(targets[0], true);
       return;
     }
@@ -475,32 +475,6 @@
         removeCard();
       },
       tone: decision.risk?.level === "warning" ? "danger" : "success"
-    });
-  }
-
-  function showConfirmation(pending) {
-    showCard({
-      title: "Doğru hedefe ulaştınız mı?",
-      text: "Onaylarsanız bu tam geçiş yalnız bilgisayarınızda öğrenilir ve sonraki karşılaşmada otomatik açılabilir.",
-      target: pending.to,
-      primaryLabel: "Evet, bunu öğren",
-      onPrimary: async () => {
-        const response = await send({ type: "CONFIRM_JOURNEY", destinationUrl: location.href });
-        if (response?.ok) {
-          showCard({
-            title: "Geçiş öğrenildi",
-            text: "Aynı bağlantı sonraki karşılaşmada doğrudan açılacak.",
-            target: pending.to,
-            tone: "success"
-          });
-        }
-      },
-      secondaryLabel: "Hayır, öğrenme",
-      onSecondary: () => {
-        send({ type: "DISMISS_JOURNEY" });
-        removeCard();
-      },
-      tone: "success"
     });
   }
 
@@ -682,8 +656,8 @@
     if (href && Engine.shouldFollowActionHref(href, location.href)) {
       const risk = Engine.assessRisk(href);
       if (!risk.safe) return false;
-      send({ type: "START_JOURNEY", sourceUrl: location.href, targetUrl: location.href });
-      safeNavigate(href, true);
+      send({ type: "START_JOURNEY", sourceUrl: location.href, targetUrl: href })
+        .then(() => safeNavigate(href, true));
       return true;
     }
 
@@ -791,7 +765,10 @@
         text: candidate.reason,
         target: candidate.url,
         primaryLabel: "Hedefe git",
-        onPrimary: () => safeNavigate(candidate.url),
+        onPrimary: () => {
+          send({ type: "START_JOURNEY", sourceUrl: location.href, targetUrl: candidate.url })
+            .then(() => safeNavigate(candidate.url));
+        },
         secondaryLabel: "Normal bağlantıyı aç",
         onSecondary: () => { location.href = targetUrl; },
         tone: "success"
@@ -800,7 +777,18 @@
     }
 
     if (looksLikeShortLink(targetUrl)) {
-      send({ type: "START_JOURNEY", sourceUrl: location.href, targetUrl });
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      send({ type: "START_JOURNEY", sourceUrl: location.href, targetUrl })
+        .then(() => { location.href = targetUrl; });
+      return;
+    }
+
+    if (journeyActive && !Engine.classifyActionText(elementLabel(anchor)).eligible) {
+      journeyActive = false;
+      document.documentElement.removeAttribute("data-smart-link-guide-popup-guard");
+      document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
+      send({ type: "DISMISS_JOURNEY" });
     }
   }, true);
 
@@ -920,7 +908,7 @@
       document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
     }
     const finalTargets = uniqueSafeTargets(finalCandidates.map((candidate) => candidate.url));
-    if (response.pendingConfirmation) showConfirmation(response.pendingConfirmation);
+    if (response.pendingConfirmation) removeCard();
     else if (response.decision?.target || response.decision?.targets?.length) {
       if (response.decision.auto) showDecision(response.decision);
       else if (settings.aggressiveFastPass && !currentPage.hardVerification && (response.decision.score || 0) >= 90) {

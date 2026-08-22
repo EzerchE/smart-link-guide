@@ -175,8 +175,13 @@ elements.openTarget.addEventListener("click", async () => {
 
 elements.watchJourney.addEventListener("click", async () => {
   try {
-    await send({ type: "START_JOURNEY", tabId: activeTab.id, targetUrl: state.currentUrl });
-    showNotice("Bu sekmedeki yönlendirme zinciri izleniyor. Hedefe ulaşınca doğrulama sorulacak.");
+    await send({
+      type: "START_JOURNEY",
+      tabId: activeTab.id,
+      targetUrl: state.currentUrl,
+      manualConfirmation: true
+    });
+    showNotice("Bu sekmedeki geçiş izleniyor. Hedefe ulaştığınızda eklenti panelinden doğrulayabilirsiniz.");
   } catch (error) { showNotice(error.message, true); }
 });
 
