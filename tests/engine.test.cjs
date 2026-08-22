@@ -47,6 +47,8 @@ assert.equal(Engine.isPlausibleCaptchaAnswer("12ab56", { minLength: 6, maxLength
 assert.equal(Engine.detectsAntiAdblockMessage("Ads Blocker Detected! Please disable your ad blocker."), true);
 assert.equal(Engine.detectsAntiAdblockMessage("Reklam engelleyiciyi kapatın ve devam edin."), true);
 assert.equal(Engine.detectsAntiAdblockMessage("A guide to privacy-friendly advertising"), false);
+assert.equal(Engine.classifyActionText("Click Image & Wait 7 seconds").reason, "Sayaç başlatma adımı");
+assert.equal(Engine.classifyActionText("Görsele tıkla ve bekle").reason, "Sayaç başlatma adımı");
 assert.equal(Engine.requiresNaturalTiming("https://jump.example/goto/ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/token"), true);
 assert.equal(Engine.requiresNaturalTiming("https://jump.example/go/short"), false);
 assert.equal(Engine.detectsTransitionError('{"status":"error","message":"Bad Request.","url":""}', "application/json"), true);

@@ -172,6 +172,8 @@
     const hasAntiAdblock = findAntiAdblockMessages().length > 0;
     const markerPatterns = [
       /\bcontinue\b/, /get\s*link/, /skip\s*(?:ad|advert)/, /please\s*wait/,
+      /click\s+(?:the\s+)?(?:image|picture|photo|box|button)\s*(?:(?:&|and)\s*)?wait/,
+      /(?:you\s+are\s+on\s+)?step\s*\d+\s*\/\s*\d+/,
       /unlock\s*link/, /proceed\s*to/, /click\s*to\s*proceed/, /bağlantıya\s*git/, /devam\s*et/,
       /linki\s*aç/, /geri\s*sayım/, /bekleyin/, /\bredirect(?:ing|ion)?\b/,
       /protected\s*(?:link|download)/
@@ -207,7 +209,9 @@
       /\b(?:sign\s*in|log\s*in|login|giriş\s*yap)\b/.test(bodyText);
     const forms = document.forms.length;
     const hasGateAction = [...document.querySelectorAll([
-      "button", 'input[type="submit"]', 'input[type="button"]', "a[href]", '[role="button"]'
+      "button", 'input[type="submit"]', 'input[type="button"]', "a[href]", '[role="button"]',
+      '[onclick]', '[data-action]', '[data-step]', '[tabindex]:not([tabindex="-1"])', 'img[alt]', 'img[title]',
+      '[class*="click" i]', '[class*="button" i]', '[id*="click" i]'
     ].join(","))].slice(0, 350).some((element) =>
       isVisible(element) && Engine.classifyActionText(elementLabel(element)).eligible
     );
@@ -513,7 +517,7 @@
     const labels = element.labels ? [...element.labels].map((label) => label.textContent || "").join(" ") : "";
     const wrappingLabel = element.closest("label")?.textContent || "";
     const imageAlts = [...element.querySelectorAll?.("img[alt]") || []].map((image) => image.alt).join(" ");
-    return `${element.textContent || ""} ${element.value || ""} ${element.getAttribute("aria-label") || ""} ${element.title || ""} ${labels} ${wrappingLabel} ${imageAlts}`
+    return `${element.textContent || ""} ${element.value || ""} ${element.getAttribute("aria-label") || ""} ${element.getAttribute("alt") || ""} ${element.title || ""} ${labels} ${wrappingLabel} ${imageAlts}`
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -626,7 +630,10 @@
 
   function eligibleActions() {
     const elements = [...document.querySelectorAll([
-      "button", 'input[type="submit"]', 'input[type="button"]', 'input[type="checkbox"]', 'a[href]', '[role="button"]', '[role="checkbox"]'
+      "button", 'input[type="submit"]', 'input[type="button"]', 'input[type="checkbox"]', 'a[href]',
+      '[role="button"]', '[role="checkbox"]', '[onclick]', '[data-action]', '[data-step]',
+      '[tabindex]:not([tabindex="-1"])', 'img[alt]', 'img[title]', '[class*="click" i]',
+      '[class*="button" i]', '[id*="click" i]'
     ].join(","))].slice(0, 500);
     const actions = [];
 
@@ -635,6 +642,19 @@
       const label = elementLabel(element);
       const form = element.form || element.closest("form");
       let classification = Engine.classifyActionText(label);
+      if (!classification.eligible && element.matches([
+        '[onclick]', '[data-action]', '[data-step]', '[role="button"]', 'img',
+        '[class*="click" i]', '[class*="button" i]', '[id*="click" i]'
+      ].join(","))) {
+        let context = element.parentElement;
+        for (let depth = 0; context && context !== document.body && depth < 3; depth += 1, context = context.parentElement) {
+          const contextText = String(context.textContent || "").replace(/\s+/g, " ").trim();
+          if (contextText.length > 0 && contextText.length <= 500) {
+            classification = Engine.classifyActionText(contextText);
+            if (classification.eligible) break;
+          }
+        }
+      }
       if (!classification.eligible && formHasCompletedVerification(form) && /\b(?:submit|verify|check|doğrula|gönder)\b/i.test(label)) {
         classification = { eligible: true, score: 99, reason: "Tamamlanan doğrulamayı gönderme" };
       }
@@ -653,7 +673,8 @@
       : null;
     const signature = `${element.tagName}:${elementLabel(element).toLowerCase()}:${href || form?.action || ""}`;
     const attempts = actionAttempts.get(signature) || 0;
-    if (attempts >= 3) return false;
+    const singleShot = action.reason === "Sayaç başlatma adımı";
+    if (attempts >= (singleShot ? 1 : 3)) return false;
     const naturallyDisabled = element.matches(":disabled") || element.getAttribute("aria-disabled") === "true" ||
       element.classList.contains("disabled") || element.classList.contains("btn-disabled") || element.classList.contains("is-disabled");
     if (naturalTimingMode && naturallyDisabled) return false;
@@ -728,11 +749,17 @@
       completeVisibleResults(visibleResults);
       return;
     }
-    removeObviousGateAds();
     if (currentPage.hardVerification) {
       document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
       return;
     }
+    const counterStarter = eligibleActions().find((action) => action.reason === "Sayaç başlatma adımı");
+    if (counterStarter) {
+      triggerAction(counterStarter);
+      removeObviousGateAds();
+      return;
+    }
+    removeObviousGateAds();
     if (naturalTimingMode) document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
     else document.documentElement.setAttribute("data-smart-link-guide-aggressive", "active");
     if (!settings.autoSubmitSteps) return;
