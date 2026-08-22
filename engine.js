@@ -172,6 +172,9 @@
   function classifyActionText(value) {
     const text = String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
     if (!text || text.length > 140) return { eligible: false, score: 0, reason: "" };
+    if (detectsAntiAdblockMessage(text)) {
+      return { eligible: false, score: 0, reason: "Reklam engeli kilidi" };
+    }
     if (/login|log\s*in|sign\s*in|sign\s*up|register|subscribe|purchase|buy\s*now|payment|pay\s*now|install|notification|bildirim|satın\s*al|kayıt\s*ol|giriş\s*yap/.test(text)) {
       return { eligible: false, score: 0, reason: "Hassas veya kapsam dışı eylem" };
     }

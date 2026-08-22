@@ -15,6 +15,12 @@
   let accelerator = null;
   let acceleratorStopsAt = 0;
 
+  window.addEventListener?.("error", (event) => {
+    const target = event.target;
+    if (target?.tagName !== "SCRIPT" || !/^https?:/i.test(target.src || "")) return;
+    document.documentElement?.setAttribute("data-smart-link-guide-resource-blocked", "script");
+  }, true);
+
   function popupGuardActive() {
     return document.documentElement?.getAttribute("data-smart-link-guide-popup-guard") === "active";
   }

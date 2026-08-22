@@ -42,6 +42,7 @@
     document.documentElement.removeAttribute("data-smart-link-guide-aggressive");
     document.documentElement.removeAttribute("data-smart-link-guide-natural-timing");
     document.documentElement.removeAttribute("data-smart-link-guide-local-counter");
+    document.documentElement.removeAttribute("data-smart-link-guide-resource-blocked");
     clearActionGuide();
     removeCard();
   }
@@ -108,6 +109,10 @@
   }
 
   function findAntiAdblockMessages() {
+    const actionableMessages = [...document.querySelectorAll('button, [role="button"], a, input[type="button"], input[type="submit"]')]
+      .filter((element) => isVisible(element) && Engine.detectsAntiAdblockMessage(elementLabel(element)));
+    if (actionableMessages.length) return actionableMessages.slice(0, 4);
+
     const explicitOverlays = [...document.querySelectorAll(ANTI_ADBLOCK_OVERLAY_SELECTOR)].filter((element) =>
       isVisible(element) && Engine.detectsAntiAdblockMessage(element.textContent)
     );
@@ -176,6 +181,7 @@
     const gateErrorText = String(document.body?.innerText || document.body?.textContent || "").trim().slice(0, 2000);
     const gateError = Engine.detectsTransitionError(gateErrorText, document.contentType);
     const hasAntiAdblock = findAntiAdblockMessages().length > 0;
+    const hasBlockedResource = document.documentElement.getAttribute("data-smart-link-guide-resource-blocked") === "script";
     const markerPatterns = [
       /\bcontinue\b/, /get\s*link/, /skip\s*(?:ad|advert)/, /please\s*wait/,
       /click\s+(?:(?:on\s+)?(?:the\s+)?(?:below\s+)?)?(?:image|picture|photo|box|button)(?:\s*(?:(?:&|and)\s*)?wait|\s+to\s+start\s+(?:the\s+)?counter)/,
@@ -284,6 +290,7 @@
       hasGateAction,
       hasLocalCountdown,
       hasAntiAdblock,
+      hasBlockedResource,
       gateError,
       gateErrorMessage: gateError ? gateErrorText.slice(0, 300) : "",
       candidates: candidates.slice(0, 8)
@@ -1032,9 +1039,13 @@
     }
     else if (currentPage.hasAntiAdblock && !currentPage.hasGateAction && !currentPage.hardVerification) {
       showCard({
-        title: "Site reklam kontrolü bekliyor",
-        text: "Uyumluluk katmanı reklam alanını görünmez bir yer tutucu olarak koruyup engelleyici uyarısını kaldırmayı deniyor. Reklam engelleyicinizi kapatmanız gerekmez.",
-        tone: "info"
+        title: currentPage.hasBlockedResource
+          ? "Geçiş bileşeni ağ filtresinde engellendi"
+          : "Site reklam kontrolü bekliyor",
+        text: currentPage.hasBlockedResource
+          ? "Sayfanın geçiş betiği reklam engelleyici veya ağ filtresi tarafından yüklenmedi. Chrome, başka bir eklentinin engellemesini bu eklentinin geçersiz kılmasına izin vermez. Bu adresi filtre istisnasına aldıktan sonra yenileyin; açılır pencere ve reklam görünümü koruması etkin kalır."
+          : "Uyumluluk katmanı reklam alanını görünmez bir yer tutucu olarak koruyor. Geçiş düğmesi hazır olduğunda otomatik işlem devam edecek.",
+        tone: currentPage.hasBlockedResource ? "danger" : "info"
       });
     }
     else if (currentPage.hardVerification && currentPage.gateScore >= 35) {

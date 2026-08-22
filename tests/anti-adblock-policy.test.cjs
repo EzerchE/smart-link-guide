@@ -5,6 +5,7 @@ const path = require("node:path");
 const root = path.join(__dirname, "..");
 const background = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const content = fs.readFileSync(path.join(root, "content.js"), "utf8");
+const guard = fs.readFileSync(path.join(root, "guard-main.js"), "utf8");
 const adHider = content.match(/function removeObviousGateAds\(\)[\s\S]*?function dismissAntiAdblockOverlay/)?.[0] || "";
 
 assert.match(background, /dismissAntiAdblockOverlays:\s*true/);
@@ -12,5 +13,8 @@ assert.match(adHider, /setProperty\("display",\s*"block",\s*"important"\)/);
 assert.match(adHider, /setProperty\("opacity",\s*"0",\s*"important"\)/);
 assert.match(adHider, /setProperty\("height",\s*"1px",\s*"important"\)/);
 assert.doesNotMatch(adHider, /setProperty\("display",\s*"none"/);
+assert.match(content, /hasBlockedResource/);
+assert.match(content, /Geçiş bileşeni ağ filtresinde engellendi/);
+assert.match(guard, /data-smart-link-guide-resource-blocked/);
 
 process.stdout.write("anti-adblock policy tests passed\n");
