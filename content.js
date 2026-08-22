@@ -192,7 +192,10 @@
       /protected\s*(?:link|download)/
     ];
     const markerCount = markerPatterns.filter((pattern) => pattern.test(bodyText)).length;
-    const hasLocalCountdown = /\b(?:please\s+)?wait\s+\d{1,3}\s*seconds?\b|\b\d{1,3}\s*seconds?\s*(?:remaining|left)\b|\b(?:counter|timer)\s*[:\-]?\s*\d{1,3}\b|\b\d{1,3}\s*saniye\s*(?:bekle|kaldı)\b/.test(bodyText);
+    const hasCountdownValue = /\b\d{1,3}\s*(?:seconds?|secs?|saniye)\b/.test(bodyText);
+    const hasCountdownContext = /please\s+wait|your\s+link\s+is\s+(?:almost\s+)?ready|link\s+is\s+being\s+prepared|counter|timer|geri\s*sayım|bağlantı\s+hazırlanıyor/.test(bodyText);
+    const hasLocalCountdown = /\b(?:please\s+)?wait\s+\d{1,3}\s*(?:seconds?|secs?)\b|\b\d{1,3}\s*(?:seconds?|secs?)\s*(?:remaining|left)\b|\b(?:counter|timer)\s*[:\-]?\s*\d{1,3}\b|\b\d{1,3}\s*saniye\s*(?:bekle|kaldı)\b/.test(bodyText) ||
+      (hasCountdownValue && hasCountdownContext);
     const hasCaptcha = /captcha|i['’]?m\s+a\s+human|ben\s+insanım/.test(bodyText) ||
       Boolean(document.querySelector('[class*="captcha" i], [id*="captcha" i], iframe[src*="captcha" i], iframe[src*="recaptcha" i]'));
     const captchaWidgets = [...document.querySelectorAll([
@@ -234,6 +237,7 @@
     const semanticGatePath = /\/(?:go|out|redirect|link|container|protected|p\d+)(?:\/|$)/i.test(location.pathname);
     let gateScore = Math.min(40, urlAnalysis.candidates.length * 40) +
       Math.min(24, markerCount * 8) +
+      (hasLocalCountdown ? 22 : 0) +
       (hasCaptcha ? 25 : 0) +
       (forms ? 6 : 0) +
       (tokenLikePath ? 8 : 0) +
@@ -796,7 +800,7 @@
   function attemptFastPass() {
     if (!contextIsUsable() || !settings?.enabled || !settings.aggressiveFastPass) return;
     currentPage = scanPage();
-    const activeGate = currentPage.gateScore >= 35 || (journeyActive && (
+    const activeGate = currentPage.hasLocalCountdown || currentPage.gateScore >= 35 || (journeyActive && (
       currentPage.gateScore >= 15 || currentPage.hasGateAction || currentPage.hasAntiAdblock
     ));
     if (!activeGate) {
@@ -1002,7 +1006,7 @@
     const finalCandidates = currentPage.candidates.filter((candidate) => candidate.final !== false && candidate.risk?.safe);
     const visibleResults = finalCandidates.filter((candidate) => candidate.source === "result-anchor");
     if (await completeVisibleResults(visibleResults)) return;
-    const activeGate = currentPage.gateScore >= 35 || (journeyActive && (
+    const activeGate = currentPage.hasLocalCountdown || currentPage.gateScore >= 35 || (journeyActive && (
       currentPage.gateScore >= 15 || currentPage.hasGateAction || currentPage.hasAntiAdblock
     ));
     if (settings.blockPopupsOnGatePages && activeGate) {

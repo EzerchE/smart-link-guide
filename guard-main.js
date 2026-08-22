@@ -15,6 +15,13 @@
   let accelerator = null;
   let acceleratorStopsAt = 0;
 
+  window.addEventListener?.("blur", () => {
+    if (!localCounterActive()) return;
+    Promise.resolve().then(() => {
+      try { window.blurred = false; } catch {}
+    });
+  }, true);
+
   window.addEventListener?.("error", (event) => {
     const target = event.target;
     if (target?.tagName !== "SCRIPT" || !/^https?:/i.test(target.src || "")) return;
@@ -109,6 +116,9 @@
 
   function resetKnownCountdowns() {
     if (!aggressiveActive()) return;
+    if (localCounterActive()) {
+      try { window.blurred = false; } catch {}
+    }
     for (const name of COUNTDOWN_NAMES) {
       try {
         if (typeof window[name] === "number" && Number.isFinite(window[name]) && window[name] > 0 && window[name] <= 600) {

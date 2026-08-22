@@ -3,11 +3,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
+(async () => {
+
 let originalOpenCalls = 0;
 let originalAlertCalls = 0;
 let observerCallback = null;
 const timeoutDelays = [];
 const intervalDelays = [];
+const eventListeners = new Map();
 const attributes = new Map();
 const document = {
   documentElement: {
@@ -29,6 +32,7 @@ const window = {
   setTimeout(callback, delay) { timeoutDelays.push(delay); return timeoutDelays.length; },
   setInterval(callback, delay) { intervalDelays.push(delay); return intervalDelays.length; },
   clearInterval() {},
+  addEventListener(type, callback) { eventListeners.set(type, callback); },
   dispatchEvent() {}
 };
 class MutationObserver {
@@ -48,8 +52,13 @@ assert.equal(timeoutDelays.at(-1), 3000);
 
 attributes.set("data-smart-link-guide-popup-guard", "active");
 attributes.set("data-smart-link-guide-aggressive", "active");
+attributes.set("data-smart-link-guide-local-counter", "active");
 observerCallback();
 assert.equal(window.count, 0);
+window.blurred = true;
+eventListeners.get("blur")();
+await Promise.resolve();
+assert.equal(window.blurred, false);
 assert.equal(window.open("https://popup.example"), null);
 assert.equal(originalOpenCalls, 1);
 window.alert("completed");
@@ -75,3 +84,7 @@ assert.equal(timeoutDelays.at(-1), 3000);
 assert.equal(intervalDelays.at(-1), 1000);
 
 process.stdout.write("guard tests passed\n");
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
